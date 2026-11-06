@@ -30,7 +30,7 @@ data class DiagnosisResult(
 object Diagnostician {
 
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
-        
+
         // ۱. تشخیص نوع سرور
         val (serverType, resolvedIp) = ServerTypeDetector.detect(config.address)
 
@@ -79,7 +79,7 @@ object Diagnostician {
                     append("✅ سرور سالم است.\n")
                     append("نوع سرور: ${serverTypeLabel(serverType)}\n")
                     append("Real Delay: ${realDelay.delayMs}ms\n")
-                    if (tcpLatencyMs != null) append("TCP RTT: ${tcp.latencyMs}ms\n")
+                    if (tcp.latencyMs != null) append("TCP RTT: ${tcp.latencyMs}ms\n")
                     if (tlsOk == true) append("TLS: موفق")
                 }
             }
