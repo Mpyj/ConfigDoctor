@@ -1,6 +1,9 @@
 package com.configdoctor.diagnose
 
+import android.content.Context
 import com.configdoctor.model.VlessConfig
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 enum class OverallStatus {
     HEALTHY,
@@ -8,7 +11,7 @@ enum class OverallStatus {
     SNI_FILTERED,
     TLS_ERROR,
     DNS_FAILED,
-    PARSED_ONLY
+    UNKNOWN
 }
 
 data class DiagnosisResult(
@@ -17,6 +20,7 @@ data class DiagnosisResult(
     val resolvedIp: String?,
     val tcpOk: Boolean,
     val tcpLatencyMs: Long?,
+    val realDelayMs: Long?,
     val tlsOk: Boolean?,
     val tlsError: String?,
     val overallStatus: OverallStatus,
@@ -25,33 +29,30 @@ data class DiagnosisResult(
 
 object Diagnostician {
 
-    fun diagnose(config: VlessConfig): DiagnosisResult {
+    suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
+        
         // ۱. تشخیص نوع سرور
         val (serverType, resolvedIp) = ServerTypeDetector.detect(config.address)
 
-        // ۲. تست TCP
+        // ۲. تست TCP (فقط برای اینکه ببینیم پورت بازه یا نه)
         val tcp = TcpTester.test(config.address, config.port)
 
         if (!tcp.ok) {
-            val summary = buildString {
-                append("❌ سرور پاسخ نمی‌دهد.\n")
-                append("آی‌پی سرور احتمالاً سوخته یا پورت بسته است.\n")
-                append("جزئیات: ${tcp.error}")
-            }
-            return DiagnosisResult(
+            return@withContext DiagnosisResult(
                 config = config,
                 serverType = serverType,
                 resolvedIp = resolvedIp,
                 tcpOk = false,
                 tcpLatencyMs = null,
+                realDelayMs = null,
                 tlsOk = null,
                 tlsError = null,
                 overallStatus = if (resolvedIp == null) OverallStatus.DNS_FAILED else OverallStatus.IP_DEAD,
-                summary = summary
+                summary = "❌ سرور پاسخ نمی‌دهد.\nآی‌پی سرور احتمالاً سوخته یا پورت بسته است.\nخطا: ${tcp.error}"
             )
         }
 
-        // ۳. تست TLS (اگه امنیت TLS/Reality بود)
+        // ۳. تست TLS
         var tlsOk: Boolean? = null
         var tlsError: String? = null
 
@@ -64,18 +65,22 @@ object Diagnostician {
             tlsError = tls.error
         }
 
-        // ۴. جمع‌بندی
+        // ۴. Real Delay (فعلاً placeholder)
+        val realDelay = XrayRealDelayTester.test(context, config)
+
+        // ۵. جمع‌بندی
         val status: OverallStatus
         val summary: String
 
         when {
-            tlsOk == true -> {
+            realDelay.ok -> {
                 status = OverallStatus.HEALTHY
                 summary = buildString {
                     append("✅ سرور سالم است.\n")
                     append("نوع سرور: ${serverTypeLabel(serverType)}\n")
-                    append("پینگ TCP: ${tcp.latencyMs}ms\n")
-                    append("TLS Handshake: موفق")
+                    append("Real Delay: ${realDelay.delayMs}ms\n")
+                    if (tcpLatencyMs != null) append("TCP RTT: ${tcp.latencyMs}ms\n")
+                    if (tlsOk == true) append("TLS: موفق")
                 }
             }
             tlsOk == false -> {
@@ -84,27 +89,27 @@ object Diagnostician {
                     append("⚠️ TCP وصل شد ولی TLS شکست خورد.\n")
                     append("احتمالاً SNI فیلتر شده یا گواهی مشکل دارد.\n")
                     append("نوع سرور: ${serverTypeLabel(serverType)}\n")
-                    append("پینگ TCP: ${tcp.latencyMs}ms\n")
                     append("خطای TLS: $tlsError")
                 }
             }
             else -> {
-                status = OverallStatus.HEALTHY
+                status = OverallStatus.UNKNOWN
                 summary = buildString {
-                    append("✅ سرور پاسخ می‌دهد.\n")
+                    append("⚠️ وضعیت نامشخص.\n")
+                    append("TCP وصل شد ولی Real Delay برقرار نشد.\n")
                     append("نوع سرور: ${serverTypeLabel(serverType)}\n")
-                    append("پینگ TCP: ${tcp.latencyMs}ms\n")
-                    append("(تست TLS انجام نشد — امنیت none)")
+                    if (realDelay.error != null) append("خطا: ${realDelay.error}")
                 }
             }
         }
 
-        return DiagnosisResult(
+        return@withContext DiagnosisResult(
             config = config,
             serverType = serverType,
             resolvedIp = resolvedIp,
             tcpOk = true,
             tcpLatencyMs = tcp.latencyMs,
+            realDelayMs = realDelay.delayMs,
             tlsOk = tlsOk,
             tlsError = tlsError,
             overallStatus = status,
@@ -114,7 +119,8 @@ object Diagnostician {
 
     private fun serverTypeLabel(type: ServerType): String = when (type) {
         ServerType.CLOUDFLARE -> "کلودفلر (Cloudflare)"
-        ServerType.DIRECT -> "سرور مستقیم"
+        ServerType.DATACENTER -> "دیتاسنتر / VPS"
+        ServerType.DIRECT -> "سرور مستقیم (Residential/Personal)"
         ServerType.UNKNOWN -> "نامشخص"
     }
 }

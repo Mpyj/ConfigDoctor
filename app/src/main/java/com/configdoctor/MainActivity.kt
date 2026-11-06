@@ -1,22 +1,20 @@
 package com.configdoctor
 
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.configdoctor.diagnose.Diagnostician
 import com.configdoctor.parser.VlessParser
-import java.util.concurrent.Executors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
-
-    private val executor = Executors.newSingleThreadExecutor()
-    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,25 +60,36 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
 
         button.setOnClickListener {
-            val link = input.text.toString()
+            val link = input.text.toString().trim()
             if (link.isBlank()) {
                 output.text = "لطفاً یه لینک وارد کن"
                 return@setOnClickListener
             }
-            output.text = "در حال تشخیص..."
 
-            executor.execute {
+            output.text = "در حال تشخیص...\n(ممکنه چند ثانیه طول بکشه)"
+            button.isEnabled = false
+
+            lifecycleScope.launch {
                 val parsed = VlessParser.parse(link)
+
                 val resultText = parsed.fold(
                     onSuccess = { config ->
-                        val diag = Diagnostician.diagnose(config)
-                        diag.summary
+                        try {
+                            val diag = Diagnostician.diagnose(this@MainActivity, config)
+                            diag.summary
+                        } catch (e: Exception) {
+                            "❌ خطا در تشخیص:\n${e.message}"
+                        }
                     },
                     onFailure = { err ->
                         "❌ خطا در پارس لینک:\n${err.message}"
                     }
                 )
-                mainHandler.post { output.text = resultText }
+
+                withContext(Dispatchers.Main) {
+                    output.text = resultText
+                    button.isEnabled = true
+                }
             }
         }
     }
