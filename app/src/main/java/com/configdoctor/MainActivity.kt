@@ -1,94 +1,141 @@
 package com.configdoctor
 
 import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import com.configdoctor.diagnose.Diagnostician
 import com.configdoctor.parser.VlessParser
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 96, 48, 48)
+        setContent {
+            // اجبار به RTL برای فارسی
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                MaterialTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        ConfigDoctorScreen(this@MainActivity)
+                    }
+                }
+            }
         }
+    }
+}
 
-        val title = TextView(this).apply {
-            text = "دستیار هوشمند کانفیگ"
-            textSize = 22f
-            setPadding(0, 0, 0, 24)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ConfigDoctorScreen(activity: MainActivity) {
+    var link by remember { mutableStateOf("") }
+    var resultText by remember { mutableStateOf("نتیجه اینجا نمایش داده می‌شود...") }
+    var isLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "دستیار هوشمند کانفیگ",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            )
         }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .padding(16.dp)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            OutlinedTextField(
+                value = link,
+                onValueChange = { link = it },
+                label = { Text("لینک VLESS را پیست کنید") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                shape = MaterialTheme.shapes.medium
+            )
 
-        val input = EditText(this).apply {
-            hint = "لینک vless:// را اینجا پیست کن"
-            minLines = 3
-            setPadding(16, 16, 16, 16)
-        }
+            Spacer(modifier = Modifier.height(16.dp))
 
-        val button = Button(this).apply {
-            text = "تشخیص"
-        }
-
-        val output = TextView(this).apply {
-            textSize = 16f
-            setPadding(0, 32, 0, 0)
-            text = "نتیجه اینجا نمایش داده می‌شود..."
-        }
-
-        val scroll = ScrollView(this).apply {
-            addView(output)
-        }
-
-        root.addView(title)
-        root.addView(input)
-        root.addView(button)
-        root.addView(scroll, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
-        ))
-
-        setContentView(root)
-
-        button.setOnClickListener {
-            val link = input.text.toString().trim()
-            if (link.isBlank()) {
-                output.text = "لطفاً یه لینک وارد کن"
-                return@setOnClickListener
+            Button(
+                onClick = {
+                    if (link.isBlank()) {
+                        resultText = "لطفاً یه لینک وارد کن"
+                        return@Button
+                    }
+                    isLoading = true
+                    resultText = "در حال تشخیص..."
+                    scope.launch {
+                        val parsed = VlessParser.parse(link)
+                        val text = parsed.fold(
+                            onSuccess = { config ->
+                                try {
+                                    val diag = Diagnostician.diagnose(activity, config)
+                                    diag.summary
+                                } catch (e: Exception) {
+                                    "خطا در تشخیص: ${e.message}"
+                                }
+                            },
+                            onFailure = { "خطا در پارس لینک: ${it.message}" }
+                        )
+                        resultText = text
+                        isLoading = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (isLoading) "لطفاً صبر کنید..." else "شروع تشخیص")
             }
 
-            output.text = "در حال تشخیص...\n(ممکنه چند ثانیه طول بکشه)"
-            button.isEnabled = false
+            Spacer(modifier = Modifier.height(24.dp))
 
-            lifecycleScope.launch {
-                val parsed = VlessParser.parse(link)
-
-                val resultText = parsed.fold(
-                    onSuccess = { config ->
-                        try {
-                            val diag = Diagnostician.diagnose(this@MainActivity, config)
-                            diag.summary
-                        } catch (e: Exception) {
-                            "❌ خطا در تشخیص:\n${e.message}"
-                        }
-                    },
-                    onFailure = { err ->
-                        "❌ خطا در پارس لینک:\n${err.message}"
-                    }
-                )
-
-                withContext(Dispatchers.Main) {
-                    output.text = resultText
-                    button.isEnabled = true
+            // کارت نتیجه
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "📋 گزارش وضعیت",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Text(
+                        text = resultText,
+                        fontSize = 15.sp,
+                        lineHeight = 24.sp
+                    )
                 }
             }
         }
