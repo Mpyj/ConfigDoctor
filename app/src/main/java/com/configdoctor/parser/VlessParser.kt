@@ -13,12 +13,9 @@ object VlessParser {
 
         return try {
             val uri = Uri.parse(trimmed)
-            val uuid = uri.userInfo
-                ?: return Result.failure(IllegalArgumentException("UUID پیدا نشد"))
-            val address = uri.host
-                ?: return Result.failure(IllegalArgumentException("آدرس سرور پیدا نشد"))
-            val port = if (uri.port > 0) uri.port
-                else return Result.failure(IllegalArgumentException("پورت معتبر نیست"))
+            val uuid = uri.userInfo ?: return Result.failure(IllegalArgumentException("UUID پیدا نشد"))
+            val address = uri.host ?: return Result.failure(IllegalArgumentException("آدرس سرور پیدا نشد"))
+            val port = if (uri.port > 0) uri.port else return Result.failure(IllegalArgumentException("پورت معتبر نیست"))
 
             val params = mutableMapOf<String, String>()
             uri.queryParameterNames.forEach { name ->
@@ -44,5 +41,46 @@ object VlessParser {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    // تابع جدید برای ساخت لینک از روی کانفیگ (برای ترمیم)
+    fun buildLink(config: VlessConfig): String {
+        val builder = Uri.Builder()
+            .scheme("vless")
+            .authority("${config.uuid}@${config.address}:${config.port}")
+
+        // پارامترهای ضروری
+        if (config.security.isNotBlank() && config.security != "none") {
+            builder.appendQueryParameter("security", config.security)
+        }
+        if (config.networkType.isNotBlank()) {
+            builder.appendQueryParameter("type", config.networkType)
+        }
+        if (!config.sni.isNullOrBlank()) {
+            builder.appendQueryParameter("sni", config.sni)
+        }
+        if (!config.host.isNullOrBlank()) {
+            builder.appendQueryParameter("host", config.host)
+        }
+        if (!config.path.isNullOrBlank()) {
+            builder.appendQueryParameter("path", config.path)
+        }
+        if (!config.fingerprint.isNullOrBlank()) {
+            builder.appendQueryParameter("fp", config.fingerprint)
+        }
+        if (!config.flow.isNullOrBlank()) {
+            builder.appendQueryParameter("flow", config.flow)
+        }
+        if (!config.publicKey.isNullOrBlank()) {
+            builder.appendQueryParameter("pbk", config.publicKey)
+        }
+        if (!config.shortId.isNullOrBlank()) {
+            builder.appendQueryParameter("sid", config.shortId)
+        }
+
+        // اضافه کردن یه اسم به انتهای لینک
+        builder.fragment("Config_Doctor_Healed")
+        
+        return builder.build().toString()
     }
 }
