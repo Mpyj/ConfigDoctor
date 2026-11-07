@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    // پلاگین اجباری Compose برای Kotlin 2.0+
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
 }
 
@@ -32,7 +31,6 @@ android {
     buildFeatures {
         compose = true
     }
-    // composeOptions دیگه لازم نیست و حذف شد
 }
 
 dependencies {
