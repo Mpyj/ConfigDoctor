@@ -1,5 +1,8 @@
 package com.configdoctor
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,7 +23,6 @@ import com.configdoctor.parser.VlessParser
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -45,16 +47,12 @@ fun ConfigDoctorScreen(activity: MainActivity) {
     var resultText by remember { mutableStateOf("نتیجه اینجا نمایش داده می‌شود...") }
     var isLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = activity.applicationContext
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        "دستیار هوشمند کانفیگ",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                title = { Text("دستیار هوشمند کانفیگ", fontWeight = FontWeight.Bold) }
             )
         }
     ) { padding ->
@@ -117,17 +115,32 @@ fun ConfigDoctorScreen(activity: MainActivity) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            // کارت نتیجه
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "📋 گزارش وضعیت",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "📋 گزارش وضعیت",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (resultText.length > 10 && !isLoading) {
+                            TextButton(onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("result", resultText))
+                            }) {
+                                Text("کپی")
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         text = resultText,
                         fontSize = 15.sp,

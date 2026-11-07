@@ -21,6 +21,8 @@ data class DiagnosisResult(
     val tcpOk: Boolean,
     val tcpLatencyMs: Long?,
     val realDelayMs: Long?,
+    val outputIp: String?,
+    val outputCountry: String?,
     val tlsOk: Boolean?,
     val tlsError: String?,
     val overallStatus: OverallStatus,
@@ -31,10 +33,7 @@ object Diagnostician {
 
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
 
-        // ۱. تشخیص نوع سرور
         val (serverType, resolvedIp) = ServerTypeDetector.detect(config.address)
-
-        // ۲. تست TCP (فقط برای اینکه ببینیم پورت بازه یا نه)
         val tcp = TcpTester.test(config.address, config.port)
 
         if (!tcp.ok) {
@@ -45,6 +44,8 @@ object Diagnostician {
                 tcpOk = false,
                 tcpLatencyMs = null,
                 realDelayMs = null,
+                outputIp = null,
+                outputCountry = null,
                 tlsOk = null,
                 tlsError = null,
                 overallStatus = if (resolvedIp == null) OverallStatus.DNS_FAILED else OverallStatus.IP_DEAD,
@@ -52,7 +53,6 @@ object Diagnostician {
             )
         }
 
-        // ۳. تست TLS
         var tlsOk: Boolean? = null
         var tlsError: String? = null
 
@@ -65,10 +65,8 @@ object Diagnostician {
             tlsError = tls.error
         }
 
-        // ۴. Real Delay (فعلاً placeholder)
         val realDelay = XrayRealDelayTester.test(context, config)
 
-        // ۵. جمع‌بندی
         val status: OverallStatus
         val summary: String
 
@@ -78,9 +76,14 @@ object Diagnostician {
                 summary = buildString {
                     append("✅ سرور سالم است.\n")
                     append("نوع سرور: ${serverTypeLabel(serverType)}\n")
-                    append("Real Delay: ${realDelay.delayMs}ms\n")
+                    if (realDelay.delayMs != null) append("Real Delay: ${realDelay.delayMs}ms\n")
                     if (tcp.latencyMs != null) append("TCP RTT: ${tcp.latencyMs}ms\n")
-                    if (tlsOk == true) append("TLS: موفق")
+                    if (tlsOk == true) append("TLS: موفق\n")
+                    if (!realDelay.ip.isNullOrBlank()) {
+                        append("IP خروجی: ${realDelay.ip}")
+                        if (!realDelay.country.isNullOrBlank()) append(" (${realDelay.country})")
+                        append("\n")
+                    }
                 }
             }
             tlsOk == false -> {
@@ -110,6 +113,8 @@ object Diagnostician {
             tcpOk = true,
             tcpLatencyMs = tcp.latencyMs,
             realDelayMs = realDelay.delayMs,
+            outputIp = realDelay.ip,
+            outputCountry = realDelay.country,
             tlsOk = tlsOk,
             tlsError = tlsError,
             overallStatus = status,

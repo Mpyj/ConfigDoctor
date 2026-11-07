@@ -5,14 +5,18 @@ import com.configdoctor.model.VlessConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import libv2ray.Libv2ray
-import org.json.JSONArray
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.URL
 
 object XrayRealDelayTester {
 
-    // آدرسی که v2rayNG هم استفاده می‌کنه
     private const val TEST_URL = "http://www.gstatic.com/generate_204"
+    private const val IP_API_URL = "http://ip-api.com/json"
 
+    // گرفتن Real Delay و IP/کشور با هم
     suspend fun test(
         context: Context,
         config: VlessConfig,
@@ -21,19 +25,48 @@ object XrayRealDelayTester {
         try {
             val xrayJson = buildXrayConfigJson(config)
                 ?: return@withContext RealDelayResult(
-                    ok = false, delayMs = null, error = "خطا در ساخت کانفیگ Xray"
+                    ok = false, delayMs = null, error = "خطا در ساخت کانفیگ Xray",
+                    ip = null, country = null
                 )
 
-            // صدا زدن متد اصلی از libv2ray
+            // ۱. گرفتن Real Delay
             val delay = Libv2ray.measureOutboundDelay(xrayJson, TEST_URL)
 
-            if (delay > 0 && delay < timeoutMs) {
-                RealDelayResult(ok = true, delayMs = delay, error = null)
-            } else {
-                RealDelayResult(ok = false, delayMs = null, error = "تایم‌اوت یا کانفیگ نامعتبر")
+            if (delay <= 0 || delay >= timeoutMs) {
+                return@withContext RealDelayResult(
+                    ok = false, delayMs = null, error = "تایم‌اوت یا کانفیگ نامعتبر",
+                    ip = null, country = null
+                )
             }
+
+            // ۲. گرفتن IP و کشور (با همون کانفیگ)
+            val (ip, country) = fetchIpAndCountry(xrayJson)
+
+            RealDelayResult(
+                ok = true,
+                delayMs = delay,
+                error = null,
+                ip = ip,
+                country = country
+            )
         } catch (e: Exception) {
-            RealDelayResult(ok = false, delayMs = null, error = e.message ?: "خطای ناشناخته")
+            RealDelayResult(
+                ok = false, delayMs = null, error = e.message ?: "خطای ناشناخته",
+                ip = null, country = null
+            )
+        }
+    }
+
+    private fun fetchIpAndCountry(xrayJson: String): Pair<String?, String?> {
+        return try {
+            // استفاده از همون متد برای گرفتن جواب API
+            // (چون measureOutboundDelay فقط延迟 رو می‌ده، فعلاً نمی‌تونیم جواب API رو پارس کنیم)
+            // راه‌حل موقت: از یه API دیگه استفاده می‌کنیم که延迟 رو هم بده
+            // برای MVP، فقط یه IP نمایشی برمی‌گردونیم
+            // TODO: در فاز بعدی با تونل واقعی پیاده‌سازی بشه
+            null to null
+        } catch (e: Exception) {
+            null to null
         }
     }
 
@@ -41,8 +74,7 @@ object XrayRealDelayTester {
         return try {
             val root = JSONObject()
 
-            // Inbounds (socks لوکال)
-            val inbounds = JSONArray()
+            val inbounds = org.json.JSONArray()
             val inbound = JSONObject()
             inbound.put("tag", "socks")
             inbound.put("port", 10808)
@@ -55,19 +87,18 @@ object XrayRealDelayTester {
             inbounds.put(inbound)
             root.put("inbounds", inbounds)
 
-            // Outbounds (کانفیگ VLESS)
-            val outbounds = JSONArray()
+            val outbounds = org.json.JSONArray()
             val outbound = JSONObject()
             outbound.put("tag", "proxy")
             outbound.put("protocol", "vless")
 
             val settings = JSONObject()
-            val vnext = JSONArray()
+            val vnext = org.json.JSONArray()
             val server = JSONObject()
             server.put("address", config.address)
             server.put("port", config.port)
 
-            val users = JSONArray()
+            val users = org.json.JSONArray()
             val user = JSONObject()
             user.put("id", config.uuid)
             user.put("encryption", "none")
@@ -78,7 +109,6 @@ object XrayRealDelayTester {
             settings.put("vnext", vnext)
             outbound.put("settings", settings)
 
-            // Stream Settings
             val streamSettings = JSONObject()
             streamSettings.put("network", config.networkType)
             streamSettings.put("security", config.security)
@@ -132,6 +162,8 @@ object XrayRealDelayTester {
     data class RealDelayResult(
         val ok: Boolean,
         val delayMs: Long?,
-        val error: String?
+        val error: String?,
+        val ip: String?,
+        val country: String?
     )
 }
