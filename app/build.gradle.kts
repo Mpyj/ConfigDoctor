@@ -16,7 +16,22 @@ android {
         versionName = "0.1.0"
     }
 
+    // این بخش رو اضافه کن
+    signingConfigs {
+        create("debug") {
+            // این مسیر به فایل کلید پیش‌فرض اشاره می‌کنه که توی محیط CI ساخته می‌شه
+            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            // این خط رو به بخش debug اضافه کن
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
         }
@@ -34,10 +49,7 @@ android {
 }
 
 dependencies {
-    // کتابخانه Xray
     implementation(files("libs/libv2ray.aar"))
-
-    // Jetpack Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -45,11 +57,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
-
-    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-
-    // Basic
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
