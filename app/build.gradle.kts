@@ -16,10 +16,10 @@ android {
         versionName = "0.1.0"
     }
 
-    // تغییر اصلی: به جای create، از getByName استفاده کن
     signingConfigs {
         getByName("debug") {
-            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            // اشاره به فایل keystore توی ریشه پروژه
+            storeFile = file("${rootDir}/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
