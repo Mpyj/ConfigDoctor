@@ -32,7 +32,6 @@ data class DiagnosisResult(
 object Diagnostician {
 
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
-
         val (serverType, resolvedIp) = ServerTypeDetector.detect(config.address)
         val tcp = TcpTester.test(config.address, config.port)
 
@@ -56,9 +55,7 @@ object Diagnostician {
         var tlsOk: Boolean? = null
         var tlsError: String? = null
 
-        if (config.security.equals("tls", ignoreCase = true) ||
-            config.security.equals("reality", ignoreCase = true)
-        ) {
+        if (config.security.equals("tls", ignoreCase = true) || config.security.equals("reality", ignoreCase = true)) {
             val sniForTest = config.sni ?: config.host
             val tls = TlsTester.test(config.address, config.port, sniForTest)
             tlsOk = tls.ok
@@ -122,10 +119,23 @@ object Diagnostician {
         )
     }
 
+    // تابع جدید برای ترمیم کانفیگ
+    suspend fun healConfig(context: Context, config: VlessConfig): VlessConfig? = withContext(Dispatchers.IO) {
+        // فقط اگه IP سوخته باشه ترمیم میکنیم
+        for (cleanIp in CloudflareCleanIps.ips) {
+            val tcpTest = TcpTester.test(cleanIp, config.port, timeoutMs = 3000)
+            if (tcpTest.ok) {
+                // یه IP جواب داد، کانفیگ جدید رو با این IP می‌سازیم
+                return@withContext config.copy(address = cleanIp)
+            }
+        }
+        return@withContext null
+    }
+
     private fun serverTypeLabel(type: ServerType): String = when (type) {
         ServerType.CLOUDFLARE -> "کلودفلر (Cloudflare)"
         ServerType.DATACENTER -> "دیتاسنتر / VPS"
-        ServerType.DIRECT -> "سرور مستقیم (Residential/Personal)"
+        ServerType.DIRECT -> "سرور مستقیم"
         ServerType.UNKNOWN -> "نامشخص"
     }
 }
