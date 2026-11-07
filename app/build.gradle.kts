@@ -16,10 +16,9 @@ android {
         versionName = "0.1.0"
     }
 
-    // این بخش رو اضافه کن
+    // تغییر اصلی: به جای create، از getByName استفاده کن
     signingConfigs {
-        create("debug") {
-            // این مسیر به فایل کلید پیش‌فرض اشاره می‌کنه که توی محیط CI ساخته می‌شه
+        getByName("debug") {
             storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -29,7 +28,6 @@ android {
 
     buildTypes {
         debug {
-            // این خط رو به بخش debug اضافه کن
             signingConfig = signingConfigs.getByName("debug")
         }
         release {
