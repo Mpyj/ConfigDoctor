@@ -15,14 +15,17 @@ object VlessParser {
             val uri = Uri.parse(trimmed)
             val uuid = uri.userInfo ?: return Result.failure(IllegalArgumentException("UUID پیدا نشد"))
             
-            // اگه host خالی بود، احتمالاً آدرس به شکل غیراستاندارد نوشته شده
+            // ۱. استخراج آدرس (host)
             var address = uri.host
             if (address.isNullOrBlank()) {
-                // تلاش برای استخراج دستی از بخش authority
+                // تلاش برای استخراج دستی از authority (مخصوصاً وقتی براکت IPv6 وجود داره)
                 val authority = uri.authority ?: ""
-                val parts = authority.split("@").lastOrNull()?.split(":")
-                if (parts != null && parts.isNotEmpty()) {
-                    address = parts[0]
+                val withoutUser = authority.substringAfter("@", authority)
+                // اگر IPv6 داخل براکت باشه، تا قبل از ] رو برمیداریم
+                address = if (withoutUser.contains("[")) {
+                    withoutUser.substringAfter("[").substringBefore("]")
+                } else {
+                    withoutUser.substringBefore(":")
                 }
             }
             
@@ -30,10 +33,17 @@ object VlessParser {
                 return Result.failure(IllegalArgumentException("آدرس سرور پیدا نشد"))
             }
 
-            // پورت: اگه -1 بود، 443 بذار
+            // ۲. استخراج پورت (اگه نبود، 443)
             var port = uri.port
             if (port <= 0) {
-                port = 443
+                // تلاش برای استخراج دستی پورت از authority
+                val authority = uri.authority ?: ""
+                val parts = authority.substringAfter("@", authority).split(":")
+                if (parts.size > 1) {
+                    port = parts.last().toIntOrNull() ?: 443
+                } else {
+                    port = 443
+                }
             }
 
             val params = mutableMapOf<String, String>()
@@ -62,31 +72,41 @@ object VlessParser {
         }
     }
 
+    // ساخت لینک با استفاده از URI استاندارد جاوا (جلوگیری از باگ‌های اندروید)
     fun buildLink(config: VlessConfig): String {
-        val sb = StringBuilder()
-        sb.append("vless://")
-        sb.append(config.uuid)
-        sb.append("@")
-        sb.append(config.address)
-        sb.append(":")
-        sb.append(if (config.port > 0) config.port else 443)
-        sb.append("?")
+        return try {
+            // چک میکنیم اگه IPv6 بود، داخل براکت بذاریم
+            val formattedAddress = if (config.address.contains(":")) "[${config.address}]" else config.address
 
-        val params = mutableListOf<String>()
-        params.add("security=${config.security}")
-        params.add("type=${config.networkType}")
-        
-        if (!config.sni.isNullOrBlank()) params.add("sni=${config.sni}")
-        if (!config.host.isNullOrBlank()) params.add("host=${config.host}")
-        if (!config.path.isNullOrBlank()) params.add("path=${config.path}")
-        if (!config.fingerprint.isNullOrBlank()) params.add("fp=${config.fingerprint}")
-        if (!config.flow.isNullOrBlank()) params.add("flow=${config.flow}")
-        if (!config.publicKey.isNullOrBlank()) params.add("pbk=${config.publicKey}")
-        if (!config.shortId.isNullOrBlank()) params.add("sid=${config.shortId}")
+            val sb = StringBuilder()
+            sb.append("vless://")
+            sb.append(config.uuid)
+            sb.append("@")
+            sb.append(formattedAddress)
+            sb.append(":")
+            sb.append(if (config.port > 0) config.port else 443)
+            
+            // ساخت Query String
+            val queryParams = mutableListOf<String>()
+            queryParams.add("security=${config.security}")
+            queryParams.add("type=${config.networkType}")
+            
+            if (!config.sni.isNullOrBlank()) queryParams.add("sni=${Uri.encode(config.sni)}")
+            if (!config.host.isNullOrBlank()) queryParams.add("host=${Uri.encode(config.host)}")
+            if (!config.path.isNullOrBlank()) queryParams.add("path=${Uri.encode(config.path)}")
+            if (!config.fingerprint.isNullOrBlank()) queryParams.add("fp=${config.fingerprint}")
+            if (!config.flow.isNullOrBlank()) queryParams.add("flow=${config.flow}")
+            if (!config.publicKey.isNullOrBlank()) queryParams.add("pbk=${config.publicKey}")
+            if (!config.shortId.isNullOrBlank()) queryParams.add("sid=${config.shortId}")
 
-        sb.append(params.joinToString("&"))
-        sb.append("#Config_Doctor_Healed")
-        
-        return sb.toString()
+            sb.append("?")
+            sb.append(queryParams.joinToString("&"))
+            sb.append("#Config_Doctor_Healed")
+
+            sb.toString()
+        } catch (e: Exception) {
+            // فالبک در صورت خطا
+            "vless://${config.uuid}@${config.address}:${if (config.port > 0) config.port else 443}?security=${config.security}&type=${config.networkType}"
+        }
     }
 }

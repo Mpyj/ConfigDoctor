@@ -40,7 +40,6 @@ import com.configdoctor.diagnose.Diagnostician
 import com.configdoctor.diagnose.OverallStatus
 import com.configdoctor.diagnose.ServerType
 import com.configdoctor.parser.VlessParser
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -82,7 +81,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
     val context = activity.applicationContext
     val scrollState = rememberScrollState()
 
-    // انیمیشن چرخش برای لودینگ
     val infiniteTransition = rememberInfiniteTransition(label = "loading")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -110,7 +108,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
             )
         }
     ) { padding ->
-        // پس‌زمینه گرادیانت
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -136,7 +133,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
             ) {
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // --- کارت ورودی ---
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(20.dp),
@@ -172,7 +168,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // --- دکمه تشخیص ---
                 Button(
                     onClick = {
                         if (link.isBlank()) {
@@ -225,7 +220,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // --- نمایش خطا ---
                 AnimatedVisibility(
                     visible = errorText != null,
                     enter = fadeIn() + expandVertically(),
@@ -251,7 +245,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                     }
                 }
 
-                // --- حالت خالی (Empty State) ---
                 AnimatedVisibility(
                     visible = diagnosisResult == null && !isLoading && errorText == null,
                     enter = fadeIn()
@@ -285,7 +278,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                     }
                 }
 
-                // --- نمایش نتیجه ---
                 AnimatedVisibility(
                     visible = diagnosisResult != null,
                     enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
@@ -297,12 +289,10 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                         StatusCard(status = res.overallStatus, summary = res.summary)
                         Spacer(modifier = Modifier.height(16.dp))
                         
-                        // کارت‌های جزئیات
                         DetailGrid(res)
                         
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        // دکمه‌های عملیات
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -359,7 +349,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                     }
                 }
 
-                // --- نمایش لینک ترمیم شده ---
                 AnimatedVisibility(
                     visible = healedLink != null,
                     enter = fadeIn() + slideInVertically(initialOffsetY = { it }),
