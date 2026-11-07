@@ -7,7 +7,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,9 +31,7 @@ import com.configdoctor.diagnose.Diagnostician
 import com.configdoctor.diagnose.OverallStatus
 import com.configdoctor.diagnose.ServerType
 import com.configdoctor.parser.VlessParser
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,7 +60,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
     var errorText by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var isHealing by remember { mutableStateOf(false) }
-    
+
     val scope = rememberCoroutineScope()
     val context = activity.applicationContext
 
@@ -87,7 +83,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ورودی
             OutlinedTextField(
                 value = link,
                 onValueChange = { link = it },
@@ -99,7 +94,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // دکمه تشخیص
             Button(
                 onClick = {
                     if (link.isBlank()) {
@@ -140,7 +134,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // نمایش خطا
             if (errorText != null) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
@@ -154,7 +147,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                 }
             }
 
-            // نمایش نتیجه
             if (diagnosisResult != null) {
                 val res = diagnosisResult!!
                 
@@ -163,12 +155,10 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                 DetailCard(res)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // دکمه‌های عملیات
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // دکمه کپی
                     Button(
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -180,7 +170,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                         Text("📋 کپی گزارش")
                     }
 
-                    // دکمه ترمیم (فقط اگه IP سوخته باشه)
                     if (res.overallStatus == OverallStatus.IP_DEAD) {
                         Button(
                             onClick = {
@@ -208,7 +197,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                     }
                 }
 
-                // نمایش لینک ترمیم شده
                 AnimatedVisibility(visible = healedLink != null) {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
@@ -238,5 +226,104 @@ fun ConfigDoctorScreen(activity: MainActivity) {
     }
 }
 
-// ... (بقیه‌ی کامپوزبل‌ها: StatusCard, DetailCard, DetailRow, serverTypeLabel, formatCountry) 
-// این‌ها رو از کد قبلی (پیام قبل) کپی کن، هیچ تغییری لازم ندارن.
+@Composable
+fun StatusCard(status: OverallStatus, summary: String) {
+    val (color, icon, title) = when (status) {
+        OverallStatus.HEALTHY -> Triple(Color(0xFF4CAF50), Icons.Default.CheckCircle, "✅ کانفیگ سالم است")
+        OverallStatus.SNI_FILTERED -> Triple(Color(0xFFFFC107), Icons.Default.Warning, "⚠️ احتمال فیلتر SNI")
+        OverallStatus.IP_DEAD -> Triple(Color(0xFFF44336), Icons.Default.Warning, "❌ سرور پاسخ نمی‌دهد")
+        else -> Triple(Color(0xFF9E9E9E), Icons.Default.Info, "ℹ️ وضعیت نامشخص")
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(32.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(text = title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = color)
+                Spacer(Modifier.height(4.dp))
+                SelectionContainer {
+                    Text(text = summary, fontSize = 14.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DetailCard(res: DiagnosisResult) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("📊 جزئیات تست‌ها", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(12.dp))
+
+            DetailRow("نوع سرور", serverTypeLabel(res.serverType))
+            DetailRow("IP سرور", res.resolvedIp ?: "-")
+            DetailRow("TCP RTT", "${res.tcpLatencyMs ?: "-"} ms")
+            DetailRow("Real Delay", "${res.realDelayMs ?: "-"} ms")
+
+            val tlsText = when (res.tlsOk) {
+                true -> "موفق"
+                false -> "ناموفق (${res.tlsError ?: "خطا"})"
+                null -> "انجام نشد"
+            }
+            DetailRow("TLS", tlsText)
+            DetailRow("IP خروجی", res.outputIp ?: "-")
+            DetailRow("کشور خروجی", formatCountry(res.outputCountry))
+        }
+    }
+}
+
+@Composable
+fun DetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+        SelectionContainer {
+            Text(text = value, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        }
+    }
+}
+
+fun serverTypeLabel(type: ServerType): String = when (type) {
+    ServerType.CLOUDFLARE -> "کلودفلر (Cloudflare)"
+    ServerType.DATACENTER -> "دیتاسنتر / VPS"
+    ServerType.DIRECT -> "سرور مستقیم"
+    ServerType.UNKNOWN -> "نامشخص"
+}
+
+fun formatCountry(code: String?): String {
+    if (code.isNullOrBlank()) return "-"
+    return when (code.uppercase()) {
+        "US" -> "آمریکا (US)"
+        "DE" -> "آلمان (DE)"
+        "NL" -> "هلند (NL)"
+        "FR" -> "فرانسه (FR)"
+        "GB" -> "انگلستان (GB)"
+        "TR" -> "ترکیه (TR)"
+        "AE" -> "امارات (AE)"
+        "CA" -> "کانادا (CA)"
+        "FI" -> "فنلاند (FI)"
+        "SE" -> "سوئد (SE)"
+        "RU" -> "روسیه (RU)"
+        "IR" -> "ایران (IR)"
+        else -> code.uppercase()
+    }
+}
