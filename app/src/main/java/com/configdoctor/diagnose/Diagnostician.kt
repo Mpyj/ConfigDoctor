@@ -4,6 +4,7 @@ import android.content.Context
 import com.configdoctor.model.VlessConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.net.InetAddress
 
 enum class OverallStatus {
     HEALTHY,
@@ -37,18 +38,11 @@ object Diagnostician {
 
         if (!tcp.ok) {
             return@withContext DiagnosisResult(
-                config = config,
-                serverType = serverType,
-                resolvedIp = resolvedIp,
-                tcpOk = false,
-                tcpLatencyMs = null,
-                realDelayMs = null,
-                outputIp = null,
-                outputCountry = null,
-                tlsOk = null,
-                tlsError = null,
+                config = config, serverType = serverType, resolvedIp = resolvedIp,
+                tcpOk = false, tcpLatencyMs = null, realDelayMs = null, outputIp = null,
+                outputCountry = null, tlsOk = null, tlsError = null,
                 overallStatus = if (resolvedIp == null) OverallStatus.DNS_FAILED else OverallStatus.IP_DEAD,
-                summary = "❌ سرور پاسخ نمی‌دهد.\nآی‌پی سرور احتمالاً سوخته یا پورت بسته است.\nخطا: ${tcp.error}"
+                summary = "❌ سرور پاسخ نمی‌دهد.\nآی‌پی سرور احتمالاً سوخته یا مسیر اینترنت شما مشکل دارد.\nخطا: ${tcp.error}"
             )
         }
 
@@ -76,11 +70,6 @@ object Diagnostician {
                     if (realDelay.delayMs != null) append("Real Delay: ${realDelay.delayMs}ms\n")
                     if (tcp.latencyMs != null) append("TCP RTT: ${tcp.latencyMs}ms\n")
                     if (tlsOk == true) append("TLS: موفق\n")
-                    if (!realDelay.ip.isNullOrBlank()) {
-                        append("IP خروجی: ${realDelay.ip}")
-                        if (!realDelay.country.isNullOrBlank()) append(" (${realDelay.country})")
-                        append("\n")
-                    }
                 }
             }
             tlsOk == false -> {
@@ -96,7 +85,7 @@ object Diagnostician {
                 status = OverallStatus.UNKNOWN
                 summary = buildString {
                     append("⚠️ وضعیت نامشخص.\n")
-                    append("TCP وصل شد ولی Real Delay برقرار نشد.\n")
+                    append("TCP وصل شد ولی Real Delay برقرار نشد (تونل خراب است).\n")
                     append("نوع سرور: ${serverTypeLabel(serverType)}\n")
                     if (realDelay.error != null) append("خطا: ${realDelay.error}")
                 }
@@ -104,32 +93,58 @@ object Diagnostician {
         }
 
         return@withContext DiagnosisResult(
-            config = config,
-            serverType = serverType,
-            resolvedIp = resolvedIp,
-            tcpOk = true,
-            tcpLatencyMs = tcp.latencyMs,
-            realDelayMs = realDelay.delayMs,
-            outputIp = realDelay.ip,
-            outputCountry = realDelay.country,
-            tlsOk = tlsOk,
-            tlsError = tlsError,
-            overallStatus = status,
-            summary = summary
+            config = config, serverType = serverType, resolvedIp = resolvedIp,
+            tcpOk = true, tcpLatencyMs = tcp.latencyMs, realDelayMs = realDelay.delayMs,
+            outputIp = realDelay.ip, outputCountry = realDelay.country,
+            tlsOk = tlsOk, tlsError = tlsError, overallStatus = status, summary = summary
         )
     }
 
-    // تابع جدید برای ترمیم کانفیگ
+    /**
+     * ترمیم کانفیگ: تست هوشمند همه‌ی مسیرها (IPv4/IPv6/دامنه)
+     */
     suspend fun healConfig(context: Context, config: VlessConfig): VlessConfig? = withContext(Dispatchers.IO) {
-        // فقط اگه IP سوخته باشه ترمیم میکنیم
-        for (cleanIp in CloudflareCleanIps.ips) {
-            val tcpTest = TcpTester.test(cleanIp, config.port, timeoutMs = 3000)
+        
+        // ۱. اول ببین آدرس فعلی IPv4 هست یا IPv6 یا دامنه
+        val currentIps = try {
+            InetAddress.getAllByName(config.address).map { it.hostAddress }
+        } catch (e: Exception) { emptyList() }
+
+        val hasIpv4 = currentIps.any { it.contains(".") }
+        val hasIpv6 = currentIps.any { it.contains(":") }
+
+        // ۲. لیست کاندیداها برای تست (اولویت‌بندی شده)
+        val candidates = mutableListOf<String>()
+
+        // اگه IPv4 داره ولی وصل نمی‌شه، اول IPv6ش رو امتحان کن
+        if (hasIpv4) {
+            currentIps.filter { it.contains(":") }.forEach { candidates.add(it) }
+        }
+        
+        // اگه IPv6 داره ولی وصل نمی‌شه، اول IPv4ش رو امتحان کن
+        if (hasIpv6) {
+            currentIps.filter { it.contains(".") }.forEach { candidates.add(it) }
+        }
+
+        // ۳. در نهایت، IPهای تمیز کلادفلر (هم IPv4 هم IPv6)
+        CloudflareCleanIps.ips.forEach { candidates.add(it) }
+
+        // ۴. تست کاندیداها به ترتیب
+        for (candidateIp in candidates.distinct()) {
+            val newConfig = config.copy(address = candidateIp)
+            
+            // تست TCP (سریع)
+            val tcpTest = TcpTester.test(candidateIp, config.port, timeoutMs = 3000)
             if (tcpTest.ok) {
-                // یه IP جواب داد، کانفیگ جدید رو با این IP می‌سازیم
-                return@withContext config.copy(address = cleanIp)
+                // تست کامل Real Delay (برای اطمینان از سالم بودن تونل)
+                val realDelayTest = XrayRealDelayTester.test(context, newConfig, timeoutMs = 5000)
+                if (realDelayTest.ok) {
+                    return@withContext newConfig // یه مسیر سالم پیدا شد!
+                }
             }
         }
-        return@withContext null
+        
+        return@withContext null // هیچ مسیر سالمی پیدا نشد
     }
 
     private fun serverTypeLabel(type: ServerType): String = when (type) {
