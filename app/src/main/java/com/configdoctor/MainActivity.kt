@@ -6,7 +6,6 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -80,7 +79,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // بخش ورودی
             OutlinedTextField(
                 value = link,
                 onValueChange = { link = it },
@@ -92,7 +90,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // دکمه تشخیص
             Button(
                 onClick = {
                     if (link.isBlank()) {
@@ -132,7 +129,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // نمایش خطا
             if (errorText != null) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
@@ -146,21 +142,17 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                 }
             }
 
-            // نمایش نتیجه (کارت‌های جداگانه)
             if (diagnosisResult != null) {
                 val res = diagnosisResult!!
                 
-                // کارت وضعیت کلی
                 StatusCard(status = res.overallStatus, summary = res.summary)
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // کارت جزئیات تست‌ها
                 DetailCard(res)
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // دکمه کپی
                 Button(
                     onClick = {
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -179,26 +171,10 @@ fun ConfigDoctorScreen(activity: MainActivity) {
 @Composable
 fun StatusCard(status: OverallStatus, summary: String) {
     val (color, icon, title) = when (status) {
-        OverallStatus.HEALTHY -> Triple(
-            Color(0xFF4CAF50), // سبز
-            Icons.Default.CheckCircle,
-            "✅ کانفیگ سالم است"
-        )
-        OverallStatus.SNI_FILTERED -> Triple(
-            Color(0xFFFFC107), // زرد
-            Icons.Default.Warning,
-            "⚠️ احتمال فیلتر SNI"
-        )
-        OverallStatus.IP_DEAD -> Triple(
-            Color(0xFFF44336), // قرمز
-            Icons.Default.Warning,
-            "❌ سرور پاسخ نمی‌دهد"
-        )
-        else -> Triple(
-            Color(0xFF9E9E9E), // خاکستری
-            Icons.Default.Info,
-            "ℹ️ وضعیت نامشخص"
-        )
+        OverallStatus.HEALTHY -> Triple(Color(0xFF4CAF50), Icons.Default.CheckCircle, "✅ کانفیگ سالم است")
+        OverallStatus.SNI_FILTERED -> Triple(Color(0xFFFFC107), Icons.Default.Warning, "⚠️ احتمال فیلتر SNI")
+        OverallStatus.IP_DEAD -> Triple(Color(0xFFF44336), Icons.Default.Warning, "❌ سرور پاسخ نمی‌دهد")
+        else -> Triple(Color(0xFF9E9E9E), Icons.Default.Info, "ℹ️ وضعیت نامشخص")
     }
 
     Card(
@@ -236,28 +212,18 @@ fun DetailCard(res: DiagnosisResult) {
             HorizontalDivider()
             Spacer(Modifier.height(12.dp))
 
-            // نوع سرور
             DetailRow("نوع سرور", serverTypeLabel(res.serverType))
-
-            // IP سرور
-            DetailRow("IP سرور", res.resolvedIp ?: "نامشخص")
-
-            // TCP RTT
+            DetailRow("IP سرور", res.resolvedIp ?: "-")
             DetailRow("TCP RTT", "${res.tcpLatencyMs ?: "-"} ms")
-
-            // Real Delay
             DetailRow("Real Delay", "${res.realDelayMs ?: "-"} ms")
-
-            // TLS
+            
             val tlsText = when (res.tlsOk) {
                 true -> "موفق"
                 false -> "ناموفق (${res.tlsError ?: "خطا"})"
                 null -> "انجام نشد"
             }
             DetailRow("TLS", tlsText)
-
-            // IP خروجی و کشور
-            DetailRow("IP خروجی", res.outputIp ?: "نامشخص")
+            DetailRow("IP خروجی", res.outputIp ?: "-")
             DetailRow("کشور خروجی", formatCountry(res.outputCountry))
         }
     }
@@ -285,9 +251,8 @@ fun serverTypeLabel(type: ServerType): String = when (type) {
     ServerType.UNKNOWN -> "نامشخص"
 }
 
-// تبدیل کد دو حرفی کشور به اسم فارسی
 fun formatCountry(code: String?): String {
-    if (code.isNullOrBlank()) return "نامشخص"
+    if (code.isNullOrBlank()) return "-"
     return when (code.uppercase()) {
         "US" -> "آمریکا (US)"
         "DE" -> "آلمان (DE)"
@@ -301,14 +266,6 @@ fun formatCountry(code: String?): String {
         "SE" -> "سوئد (SE)"
         "RU" -> "روسیه (RU)"
         "IR" -> "ایران (IR)"
-        "SG" -> "سنگاپور (SG)"
-        "JP" -> "ژاپن (JP)"
-        "IN" -> "هند (IN)"
-        "PL" -> "لهستان (PL)"
-        "AT" -> "اتریش (AT)"
-        "CH" -> "سوئیس (CH)"
-        "IT" -> "ایتالیا (IT)"
-        "ES" -> "اسپانیا (ES)"
         else -> code.uppercase()
     }
 }

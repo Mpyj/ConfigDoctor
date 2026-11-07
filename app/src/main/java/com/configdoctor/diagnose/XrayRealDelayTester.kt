@@ -7,14 +7,17 @@ import kotlinx.coroutines.withContext
 import libv2ray.Libv2ray
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.net.HttpURLConnection
 import java.net.InetSocketAddress
-import java.net.Socket
+import java.net.Proxy
+import java.net.URL
 
 object XrayRealDelayTester {
 
     private const val TEST_URL = "http://www.gstatic.com/generate_204"
+    private const val IP_API_URL = "https://api.ip.sb/geoip"
+    private const val SOCKS_PORT = 10808
+    private const val HTTP_PORT = 10809
 
     suspend fun test(
         context: Context,
@@ -24,11 +27,11 @@ object XrayRealDelayTester {
         try {
             val xrayJson = buildXrayConfigJson(config)
                 ?: return@withContext RealDelayResult(
-                    ok = false, delayMs = null, error = "خطا در ساخت کانفیگ Xray (JSON نامعتبر)",
+                    ok = false, delayMs = null, error = "خطا در ساخت کانفیگ Xray",
                     ip = null, country = null
                 )
 
-            // ۱. گرفتن Real Delay
+            // ۱. اندازه‌گیری Real Delay
             val delay = Libv2ray.measureOutboundDelay(xrayJson, TEST_URL)
 
             if (delay <= 0 || delay >= timeoutMs) {
@@ -38,10 +41,11 @@ object XrayRealDelayTester {
                 )
             }
 
-            // ۲. گرفتن IP و کشور از طریق SOCKS5
-            // صبر می‌کنیم تا تونل Xray کامل بالا بیاد (نیم ثانیه کافیه)
-            Thread.sleep(500)
-            val (ip, country) = fetchIpAndCountryViaSocks5()
+            // ۲. صبر می‌کنیم تا تونل بالا بیاد
+            Thread.sleep(1500)
+
+            // ۳. گرفتن IP و کشور از طریق HTTP Proxy
+            val (ip, country) = fetchIpAndCountryViaHttpProxy()
 
             RealDelayResult(
                 ok = true,
@@ -58,112 +62,62 @@ object XrayRealDelayTester {
         }
     }
 
-    private fun fetchIpAndCountryViaSocks5(): Pair<String?, String?> {
+    private fun fetchIpAndCountryViaHttpProxy(): Pair<String?, String?> {
         return try {
-            val exitIp = resolveIpViaSocks5(10808, "api.ipify.org")
-            if (exitIp == null) return null to null
+            val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", HTTP_PORT))
+            val url = URL(IP_API_URL)
+            val conn = url.openConnection(proxy) as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+            conn.requestMethod = "GET"
 
-            val country = resolveCountryViaSocks5(10808, exitIp)
-            exitIp to country
+            if (conn.responseCode != 200) {
+                return null to null
+            }
+
+            val body = conn.inputStream.bufferedReader().readText()
+            val json = JSONObject(body)
+            val ip = json.optString("ip", null)
+            val country = json.optString("country_code", null)
+            ip to country
         } catch (e: Exception) {
             null to null
         }
-    }
-
-    private fun resolveIpViaSocks5(socksPort: Int, targetHost: String): String? {
-        return try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress("127.0.0.1", socksPort), 5000)
-                socket.soTimeout = 5000
-
-                val out = socket.getOutputStream()
-                val inp = socket.getInputStream()
-
-                out.write(byteArrayOf(0x05, 0x01, 0x00))
-                out.flush()
-                val auth = ByteArray(2)
-                inp.read(auth)
-                if (auth.size < 2 || auth[1] != 0x00.toByte()) return null
-
-                val hostBytes = targetHost.toByteArray()
-                val request = byteArrayOf(0x05, 0x01, 0x00, 0x03, hostBytes.size.toByte()) + hostBytes + byteArrayOf(0x00, 0x50)
-                out.write(request)
-                out.flush()
-
-                val resp = ByteArray(10)
-                inp.read(resp)
-                if (resp.size < 2 || resp[1] != 0x00.toByte()) return null
-
-                out.write("GET / HTTP/1.1\r\nHost: $targetHost\r\nConnection: close\r\n\r\n".toByteArray())
-                out.flush()
-
-                val reader = BufferedReader(InputStreamReader(inp))
-                val response = reader.readText()
-                val ipRegex = Regex("\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b")
-                ipRegex.find(response)?.value
-            }
-        } catch (e: Exception) { null }
-    }
-
-    private fun resolveCountryViaSocks5(socksPort: Int, ip: String): String? {
-        return try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress("127.0.0.1", socksPort), 5000)
-                socket.soTimeout = 5000
-
-                val out = socket.getOutputStream()
-                val inp = socket.getInputStream()
-
-                out.write(byteArrayOf(0x05, 0x01, 0x00))
-                out.flush()
-                val auth = ByteArray(2)
-                inp.read(auth)
-                if (auth.size < 2 || auth[1] != 0x00.toByte()) return null
-
-                val targetHost = "ip-api.com"
-                val hostBytes = targetHost.toByteArray()
-                val request = byteArrayOf(0x05, 0x01, 0x00, 0x03, hostBytes.size.toByte()) + hostBytes + byteArrayOf(0x00, 0x50)
-                out.write(request)
-                out.flush()
-
-                val resp = ByteArray(10)
-                inp.read(resp)
-                if (resp.size < 2 || resp[1] != 0x00.toByte()) return null
-
-                val path = "/json/$ip?fields=countryCode"
-                out.write("GET $path HTTP/1.1\r\nHost: $targetHost\r\nConnection: close\r\n\r\n".toByteArray())
-                out.flush()
-
-                val reader = BufferedReader(InputStreamReader(inp))
-                val response = reader.readText()
-                val jsonStart = response.indexOf('{')
-                if (jsonStart >= 0) {
-                    val json = JSONObject(response.substring(jsonStart))
-                    json.optString("countryCode", null)
-                } else null
-            }
-        } catch (e: Exception) { null }
     }
 
     private fun buildXrayConfigJson(config: VlessConfig): String? {
         return try {
             val root = JSONObject()
 
-            // Inbounds
+            // Inbounds (SOCKS + HTTP)
             val inbounds = JSONArray()
-            val inbound = JSONObject()
-            inbound.put("tag", "socks")
-            inbound.put("port", 10808)
-            inbound.put("listen", "127.0.0.1")
-            inbound.put("protocol", "socks")
-            val inboundSettings = JSONObject()
-            inboundSettings.put("auth", "noauth")
-            inboundSettings.put("udp", false)
-            inbound.put("settings", inboundSettings)
-            inbounds.put(inbound)
+
+            // SOCKS Inbound
+            val socksInbound = JSONObject()
+            socksInbound.put("tag", "socks")
+            socksInbound.put("port", SOCKS_PORT)
+            socksInbound.put("listen", "127.0.0.1")
+            socksInbound.put("protocol", "socks")
+            val socksSettings = JSONObject()
+            socksSettings.put("auth", "noauth")
+            socksSettings.put("udp", false)
+            socksInbound.put("settings", socksSettings)
+            inbounds.put(socksInbound)
+
+            // HTTP Inbound (برای گرفتن IP و کشور)
+            val httpInbound = JSONObject()
+            httpInbound.put("tag", "http")
+            httpInbound.put("port", HTTP_PORT)
+            httpInbound.put("listen", "127.0.0.1")
+            httpInbound.put("protocol", "http")
+            val httpSettings = JSONObject()
+            httpSettings.put("allowTransparent", false)
+            httpInbound.put("settings", httpSettings)
+            inbounds.put(httpInbound)
+
             root.put("inbounds", inbounds)
 
-            // Outbounds
+            // Outbounds (کانفیگ VLESS)
             val outbounds = JSONArray()
             val outbound = JSONObject()
             outbound.put("tag", "proxy")
@@ -186,6 +140,7 @@ object XrayRealDelayTester {
             settings.put("vnext", vnext)
             outbound.put("settings", settings)
 
+            // Stream Settings
             val streamSettings = JSONObject()
             streamSettings.put("network", config.networkType.ifBlank { "tcp" })
             streamSettings.put("security", config.security.ifBlank { "none" })
