@@ -33,10 +33,12 @@ android {
     buildTypes {
         debug {
             signingConfig = signingConfigs.getByName("debug")
-            // برای دیباگ، Minify رو خاموش می‌ذاریم تا دیباگ کردن راحت باشه
+            // بهینه‌سازی برای دیباگ خاموشه تا APK خراب نشه
             isMinifyEnabled = false
+            isShrinkResources = false
         }
         release {
+            // برای آینده: بیلد release با بهینه‌سازی
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
