@@ -6,7 +6,7 @@ import com.configdoctor.model.VlessConfig
 object VlessParser {
 
     fun parse(link: String): Result<VlessConfig> {
-        // ... (کد قبلی پارس بدون تغییر) ...
+        // ... کد قبلی پارس ...
         val trimmed = link.trim()
         if (!trimmed.startsWith("vless://", ignoreCase = true)) {
             return Result.failure(IllegalArgumentException("لینک باید با vless:// شروع بشه"))
@@ -60,9 +60,7 @@ object VlessParser {
         if (!config.publicKey.isNullOrBlank()) builder.appendQueryParameter("pbk", config.publicKey)
         if (!config.shortId.isNullOrBlank()) builder.appendQueryParameter("sid", config.shortId)
 
-        // یه اسم برای کانفیگ ترمیم شده
         builder.fragment("Config_Doctor_Healed")
-        
         return builder.build().toString()
     }
 }
