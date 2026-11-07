@@ -1,6 +1,8 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    // پلاگین اجباری Compose برای Kotlin 2.0+
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
 }
 
 android {
@@ -30,13 +32,11 @@ android {
     buildFeatures {
         compose = true
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
-    }
+    // composeOptions دیگه لازم نیست و حذف شد
 }
 
 dependencies {
-    // کتابخانه Xray (اسم فایل تو)
+    // کتابخانه Xray
     implementation(files("libs/libv2ray.aar"))
 
     // Jetpack Compose
