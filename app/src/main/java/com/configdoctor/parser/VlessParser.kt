@@ -14,13 +14,26 @@ object VlessParser {
         return try {
             val uri = Uri.parse(trimmed)
             val uuid = uri.userInfo ?: return Result.failure(IllegalArgumentException("UUID پیدا نشد"))
-            val address = uri.host ?: return Result.failure(IllegalArgumentException("آدرس سرور پیدا نشد"))
             
-            // اگه پورت -1 باشه یعنی توی لینک نبوده، از پارامترها یا پیش‌فرض استفاده کن
-            val port = if (uri.port > 0) uri.port else {
-                // اگه پورت توی URI نبود، شاید توی query param باشه (نادر)
-                val queryPort = uri.getQueryParameter("port")
-                if (queryPort != null) queryPort.toIntOrNull() ?: 443 else 443
+            // اگه host خالی بود، احتمالاً آدرس به شکل غیراستاندارد نوشته شده
+            var address = uri.host
+            if (address.isNullOrBlank()) {
+                // تلاش برای استخراج دستی از بخش authority
+                val authority = uri.authority ?: ""
+                val parts = authority.split("@").lastOrNull()?.split(":")
+                if (parts != null && parts.isNotEmpty()) {
+                    address = parts[0]
+                }
+            }
+            
+            if (address.isNullOrBlank()) {
+                return Result.failure(IllegalArgumentException("آدرس سرور پیدا نشد"))
+            }
+
+            // پورت: اگه -1 بود، 443 بذار
+            var port = uri.port
+            if (port <= 0) {
+                port = 443
             }
 
             val params = mutableMapOf<String, String>()
@@ -49,7 +62,6 @@ object VlessParser {
         }
     }
 
-    // ساخت دستی لینک (بدون Uri.Builder برای جلوگیری از باگ‌های اندروید)
     fun buildLink(config: VlessConfig): String {
         val sb = StringBuilder()
         sb.append("vless://")
@@ -57,12 +69,10 @@ object VlessParser {
         sb.append("@")
         sb.append(config.address)
         sb.append(":")
-        sb.append(config.port)
+        sb.append(if (config.port > 0) config.port else 443)
         sb.append("?")
 
         val params = mutableListOf<String>()
-        
-        // پارامترهای ضروری
         params.add("security=${config.security}")
         params.add("type=${config.networkType}")
         

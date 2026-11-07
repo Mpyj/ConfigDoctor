@@ -107,9 +107,12 @@ object Diagnostician {
      */
     suspend fun healConfig(context: Context, config: VlessConfig): VlessConfig? = withContext(Dispatchers.IO) {
         
+        // *** این خط مهمه: اگه پورت -1 بود، به 443 تغییرش بده ***
+        val baseConfig = if (config.port <= 0) config.copy(port = 443) else config
+
         // ۱. تشخیص نوع آدرس فعلی
         val currentIps = try {
-            InetAddress.getAllByName(config.address).map { it.hostAddress }
+            InetAddress.getAllByName(baseConfig.address).map { it.hostAddress }
         } catch (e: Exception) { emptyList() }
 
         val hasIpv4 = currentIps.any { it.contains(".") }
@@ -119,11 +122,9 @@ object Diagnostician {
 
         // ۲. اولویت اول: نسخه‌ی مخالف (اگه IPv4 داره، اول IPv6 رو تست کن)
         if (hasIpv4) {
-            // آدرس IPv6 برای همین دامنه/سرور رو پیدا کن
             currentIps.filter { it.contains(":") }.forEach { candidates.add(it) }
         }
         if (hasIpv6) {
-            // آدرس IPv4 برای همین دامنه/سرور رو پیدا کن
             currentIps.filter { it.contains(".") }.forEach { candidates.add(it) }
         }
 
@@ -131,15 +132,15 @@ object Diagnostician {
         val ipv6Clean = CloudflareCleanIps.ips.filter { it.contains(":") }
         val ipv4Clean = CloudflareCleanIps.ips.filter { it.contains(".") }
         
-        ipv6Clean.forEach { candidates.add(it) } // اول IPv6
-        ipv4Clean.forEach { candidates.add(it) } // بعد IPv4
+        ipv6Clean.forEach { candidates.add(it) }
+        ipv4Clean.forEach { candidates.add(it) }
 
         // ۴. تست کاندیداها به ترتیب اولویت
         for (candidateIp in candidates.distinct()) {
-            val newConfig = config.copy(address = candidateIp)
+            val newConfig = baseConfig.copy(address = candidateIp)
             
             // تست TCP
-            val tcpTest = TcpTester.test(candidateIp, config.port, timeoutMs = 2000)
+            val tcpTest = TcpTester.test(candidateIp, baseConfig.port, timeoutMs = 2000)
             if (tcpTest.ok) {
                 // اگه TCP جواب داد، Real Delay رو چک کن (برای اطمینان از سالم بودن تونل)
                 val realDelayTest = XrayRealDelayTester.test(context, newConfig, timeoutMs = 4000)
