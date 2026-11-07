@@ -4,6 +4,8 @@ import android.content.Context
 import com.configdoctor.model.VlessConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import libv2ray.Libv2ray
+import org.json.JSONArray
 import org.json.JSONObject
 
 object XrayRealDelayTester {
@@ -17,17 +19,14 @@ object XrayRealDelayTester {
         timeoutMs: Long = 10000L
     ): RealDelayResult = withContext(Dispatchers.IO) {
         try {
-            // ۱. تبدیل کانفیگ VLESS به JSON که libv2ray می‌فهمه
             val xrayJson = buildXrayConfigJson(config)
                 ?: return@withContext RealDelayResult(
                     ok = false, delayMs = null, error = "خطا در ساخت کانفیگ Xray"
                 )
 
-            // ۲. صدا زدن متد اصلی (از کتابخانه libv2ray)
-            // این متد همون چیزیه که v2rayNG استفاده می‌کنه 
+            // صدا زدن متد اصلی از libv2ray
             val delay = Libv2ray.measureOutboundDelay(xrayJson, TEST_URL)
 
-            // ۳. بررسی نتیجه
             if (delay > 0 && delay < timeoutMs) {
                 RealDelayResult(ok = true, delayMs = delay, error = null)
             } else {
@@ -38,16 +37,12 @@ object XrayRealDelayTester {
         }
     }
 
-    /**
-     * ساخت JSON کانفیگ Xray از VlessConfig
-     * ساختار دقیقاً مثل خروجی v2rayNG هست
-     */
     private fun buildXrayConfigJson(config: VlessConfig): String? {
         return try {
             val root = JSONObject()
 
-            // بخش Inbounds (یه پورت لوکال socks برای تست)
-            val inbounds = org.json.JSONArray()
+            // Inbounds (socks لوکال)
+            val inbounds = JSONArray()
             val inbound = JSONObject()
             inbound.put("tag", "socks")
             inbound.put("port", 10808)
@@ -60,25 +55,23 @@ object XrayRealDelayTester {
             inbounds.put(inbound)
             root.put("inbounds", inbounds)
 
-            // بخش Outbounds (خود کانفیگ VLESS)
-            val outbounds = org.json.JSONArray()
+            // Outbounds (کانفیگ VLESS)
+            val outbounds = JSONArray()
             val outbound = JSONObject()
             outbound.put("tag", "proxy")
             outbound.put("protocol", "vless")
 
             val settings = JSONObject()
-            val vnext = org.json.JSONArray()
+            val vnext = JSONArray()
             val server = JSONObject()
             server.put("address", config.address)
             server.put("port", config.port)
 
-            val users = org.json.JSONArray()
+            val users = JSONArray()
             val user = JSONObject()
             user.put("id", config.uuid)
             user.put("encryption", "none")
-            if (!config.flow.isNullOrBlank()) {
-                user.put("flow", config.flow)
-            }
+            if (!config.flow.isNullOrBlank()) user.put("flow", config.flow)
             users.put(user)
             server.put("users", users)
             vnext.put(server)
@@ -90,7 +83,6 @@ object XrayRealDelayTester {
             streamSettings.put("network", config.networkType)
             streamSettings.put("security", config.security)
 
-            // تنظیمات TLS
             if (config.security.equals("tls", ignoreCase = true)) {
                 val tlsSettings = JSONObject()
                 tlsSettings.put("serverName", config.sni ?: config.host ?: config.address)
@@ -101,21 +93,15 @@ object XrayRealDelayTester {
                 streamSettings.put("tlsSettings", tlsSettings)
             }
 
-            // تنظیمات Reality
             if (config.security.equals("reality", ignoreCase = true)) {
                 val realitySettings = JSONObject()
                 realitySettings.put("serverName", config.sni ?: config.address)
                 realitySettings.put("fingerprint", config.fingerprint ?: "chrome")
-                if (!config.publicKey.isNullOrBlank()) {
-                    realitySettings.put("publicKey", config.publicKey)
-                }
-                if (!config.shortId.isNullOrBlank()) {
-                    realitySettings.put("shortId", config.shortId)
-                }
+                if (!config.publicKey.isNullOrBlank()) realitySettings.put("publicKey", config.publicKey)
+                if (!config.shortId.isNullOrBlank()) realitySettings.put("shortId", config.shortId)
                 streamSettings.put("realitySettings", realitySettings)
             }
 
-            // تنظیمات WebSocket
             if (config.networkType.equals("ws", ignoreCase = true)) {
                 val wsSettings = JSONObject()
                 wsSettings.put("path", config.path ?: "/")
@@ -127,7 +113,6 @@ object XrayRealDelayTester {
                 streamSettings.put("wsSettings", wsSettings)
             }
 
-            // تنظیمات gRPC
             if (config.networkType.equals("grpc", ignoreCase = true)) {
                 val grpcSettings = JSONObject()
                 grpcSettings.put("serviceName", config.path ?: "")

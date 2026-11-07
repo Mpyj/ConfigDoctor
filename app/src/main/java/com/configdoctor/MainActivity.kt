@@ -15,7 +15,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.lifecycleScope
 import com.configdoctor.diagnose.Diagnostician
 import com.configdoctor.parser.VlessParser
 import kotlinx.coroutines.launch
@@ -25,7 +24,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // اجبار به RTL برای فارسی
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 MaterialTheme {
                     Surface(
@@ -86,7 +84,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                         return@Button
                     }
                     isLoading = true
-                    resultText = "در حال تشخیص..."
+                    resultText = "در حال تشخیص...\n(ممکنه چند ثانیه طول بکشه)"
                     scope.launch {
                         val parsed = VlessParser.parse(link)
                         val text = parsed.fold(
@@ -119,7 +117,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // کارت نتیجه
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)

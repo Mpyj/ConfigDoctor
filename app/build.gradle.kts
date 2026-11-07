@@ -36,8 +36,8 @@ android {
 }
 
 dependencies {
-    // کتابخانه Xray
-    implementation(files("libs/libXray.aar"))
+    // کتابخانه Xray (اسم فایل تو)
+    implementation(files("libs/libv2ray.aar"))
 
     // Jetpack Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
