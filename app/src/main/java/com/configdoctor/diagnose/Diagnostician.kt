@@ -101,11 +101,13 @@ object Diagnostician {
     }
 
     /**
-     * ترمیم کانفیگ: تست هوشمند همه‌ی مسیرها (IPv4/IPv6/دامنه)
+     * ترمیم کانفیگ: اولویت‌بندی هوشمند بر اساس نوع شبکه‌ی اپراتور کاربر
+     * - اول: نسخه‌ی مخالف (اگه IPv4 بود، IPv6 رو تست کن و برعکس)
+     * - دوم: لیست IPهای تمیز (اول IPv6 چون تو گفتی برات بهتره، بعد IPv4)
      */
     suspend fun healConfig(context: Context, config: VlessConfig): VlessConfig? = withContext(Dispatchers.IO) {
         
-        // ۱. اول ببین آدرس فعلی IPv4 هست یا IPv6 یا دامنه
+        // ۱. تشخیص نوع آدرس فعلی
         val currentIps = try {
             InetAddress.getAllByName(config.address).map { it.hostAddress }
         } catch (e: Exception) { emptyList() }
@@ -113,38 +115,41 @@ object Diagnostician {
         val hasIpv4 = currentIps.any { it.contains(".") }
         val hasIpv6 = currentIps.any { it.contains(":") }
 
-        // ۲. لیست کاندیداها برای تست (اولویت‌بندی شده)
         val candidates = mutableListOf<String>()
 
-        // اگه IPv4 داره ولی وصل نمی‌شه، اول IPv6ش رو امتحان کن
+        // ۲. اولویت اول: نسخه‌ی مخالف (اگه IPv4 داره، اول IPv6 رو تست کن)
         if (hasIpv4) {
+            // آدرس IPv6 برای همین دامنه/سرور رو پیدا کن
             currentIps.filter { it.contains(":") }.forEach { candidates.add(it) }
         }
-        
-        // اگه IPv6 داره ولی وصل نمی‌شه، اول IPv4ش رو امتحان کن
         if (hasIpv6) {
+            // آدرس IPv4 برای همین دامنه/سرور رو پیدا کن
             currentIps.filter { it.contains(".") }.forEach { candidates.add(it) }
         }
 
-        // ۳. در نهایت، IPهای تمیز کلادفلر (هم IPv4 هم IPv6)
-        CloudflareCleanIps.ips.forEach { candidates.add(it) }
+        // ۳. اولویت دوم: لیست IPهای تمیز کلادفلر (اول IPv6، بعد IPv4)
+        val ipv6Clean = CloudflareCleanIps.ips.filter { it.contains(":") }
+        val ipv4Clean = CloudflareCleanIps.ips.filter { it.contains(".") }
+        
+        ipv6Clean.forEach { candidates.add(it) } // اول IPv6
+        ipv4Clean.forEach { candidates.add(it) } // بعد IPv4
 
-        // ۴. تست کاندیداها به ترتیب
+        // ۴. تست کاندیداها به ترتیب اولویت
         for (candidateIp in candidates.distinct()) {
             val newConfig = config.copy(address = candidateIp)
             
-            // تست TCP (سریع)
-            val tcpTest = TcpTester.test(candidateIp, config.port, timeoutMs = 3000)
+            // تست TCP
+            val tcpTest = TcpTester.test(candidateIp, config.port, timeoutMs = 2000)
             if (tcpTest.ok) {
-                // تست کامل Real Delay (برای اطمینان از سالم بودن تونل)
-                val realDelayTest = XrayRealDelayTester.test(context, newConfig, timeoutMs = 5000)
+                // اگه TCP جواب داد، Real Delay رو چک کن (برای اطمینان از سالم بودن تونل)
+                val realDelayTest = XrayRealDelayTester.test(context, newConfig, timeoutMs = 4000)
                 if (realDelayTest.ok) {
-                    return@withContext newConfig // یه مسیر سالم پیدا شد!
+                    return@withContext newConfig
                 }
             }
         }
         
-        return@withContext null // هیچ مسیر سالمی پیدا نشد
+        return@withContext null
     }
 
     private fun serverTypeLabel(type: ServerType): String = when (type) {
