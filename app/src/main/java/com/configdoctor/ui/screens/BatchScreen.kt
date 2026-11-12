@@ -33,7 +33,7 @@ import kotlinx.coroutines.withContext
 import java.net.URL
 
 @Composable
-fun BatchScreen(
+fun BatchTab(
     activity: MainActivity,
     isDarkTheme: Boolean
 ) {
@@ -53,7 +53,6 @@ fun BatchScreen(
     val textColor = if (isDarkTheme) Color.White else Color.Black
     val subTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
 
-    // تابع دریافت ساب (اصلاح‌شده)
     val fetchSubscription: (String) -> Unit = { url ->
         isFetchingSub = true
         scope.launch {
@@ -65,18 +64,14 @@ fun BatchScreen(
                 }
             }
             if (content != null) {
-                // محتوای ساب معمولاً Base64 هست، باید دیکد بشه
                 val decoded = try {
                     String(android.util.Base64.decode(content, android.util.Base64.DEFAULT))
                 } catch (e: Exception) {
-                    content // اگه Base64 نبود، خودش رو استفاده کن
+                    content
                 }
-                
-                // فیلتر کردن خطوطی که واقعاً یه کانفیگ هستن
                 val configLines = decoded.lines().filter { line ->
                     line.startsWith("vless://") || line.startsWith("vmess://") || line.startsWith("trojan://")
                 }
-                
                 if (configLines.isNotEmpty()) {
                     linksText = configLines.joinToString("\n")
                     Toast.makeText(context, "${configLines.size} کانفیگ از ساب دریافت شد", Toast.LENGTH_SHORT).show()
@@ -99,7 +94,6 @@ fun BatchScreen(
     ) {
         Spacer(Modifier.height(8.dp))
 
-        // ورودی لینک ساب
         var subUrl by remember { mutableStateOf("") }
         OutlinedTextField(
             value = subUrl,
