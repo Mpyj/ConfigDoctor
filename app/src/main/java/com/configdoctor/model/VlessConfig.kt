@@ -2,6 +2,7 @@ package com.configdoctor.model
 
 data class VlessConfig(
     val rawLink: String,
+    val protocol: String = "vless", // vless, vmess, trojan
     val uuid: String,
     val address: String,
     val port: Int,

@@ -33,7 +33,6 @@ object XrayRealDelayTester {
                     ip = null, country = null
                 )
 
-            // ۱. اندازه‌گیری Real Delay
             val delay = Libv2ray.measureOutboundDelay(xrayJson, TEST_URL)
 
             if (delay <= 0 || delay >= timeoutMs) {
@@ -43,7 +42,6 @@ object XrayRealDelayTester {
                 )
             }
 
-            // ۲. گرفتن IP و کشور از طریق تونل موقت
             val (ip, country) = fetchIpAndCountry(config)
 
             RealDelayResult(
@@ -77,7 +75,6 @@ object XrayRealDelayTester {
             Thread.sleep(1000)
             
             var result = fetchFromCloudflareTrace()
-            
             if (result.first == null) {
                 result = fetchFromIpify()
             }
@@ -99,9 +96,7 @@ object XrayRealDelayTester {
             conn.readTimeout = 5000
             conn.requestMethod = "GET"
 
-            if (conn.responseCode != 200) {
-                return Pair(null, null)
-            }
+            if (conn.responseCode != 200) return Pair(null, null)
 
             val body = conn.inputStream.bufferedReader().readText()
             var ip: String? = null
@@ -124,14 +119,11 @@ object XrayRealDelayTester {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
 
-            if (conn.responseCode != 200) {
-                return Pair(null, null)
-            }
+            if (conn.responseCode != 200) return Pair(null, null)
 
             val body = conn.inputStream.bufferedReader().readText()
             val json = JSONObject(body)
             val ip = json.optString("ip", null)
-            
             val country = if (ip != null) fetchCountryFromIpApi(ip) else null
             Pair(ip, country)
         } catch (e: Exception) {
@@ -159,6 +151,7 @@ object XrayRealDelayTester {
         return try {
             val root = JSONObject()
 
+            // Inbounds (SOCKS + HTTP)
             val inbounds = JSONArray()
 
             val socksInbound = JSONObject()
@@ -184,28 +177,63 @@ object XrayRealDelayTester {
 
             root.put("inbounds", inbounds)
 
+            // Outbounds (بر اساس پروتکل)
             val outbounds = JSONArray()
             val outbound = JSONObject()
             outbound.put("tag", "proxy")
-            outbound.put("protocol", "vless")
 
-            val settings = JSONObject()
-            val vnext = JSONArray()
-            val server = JSONObject()
-            server.put("address", config.address)
-            server.put("port", config.port)
+            when (config.protocol) {
+                "vmess" -> {
+                    outbound.put("protocol", "vmess")
+                    val settings = JSONObject()
+                    val vnext = JSONArray()
+                    val server = JSONObject()
+                    server.put("address", config.address)
+                    server.put("port", config.port)
+                    val users = JSONArray()
+                    val user = JSONObject()
+                    user.put("id", config.uuid)
+                    user.put("alterId", 0)
+                    user.put("security", "auto")
+                    users.put(user)
+                    server.put("users", users)
+                    vnext.put(server)
+                    settings.put("vnext", vnext)
+                    outbound.put("settings", settings)
+                }
+                "trojan" -> {
+                    outbound.put("protocol", "trojan")
+                    val settings = JSONObject()
+                    val servers = JSONArray()
+                    val server = JSONObject()
+                    server.put("address", config.address)
+                    server.put("port", config.port)
+                    server.put("password", config.uuid)
+                    servers.put(server)
+                    settings.put("servers", servers)
+                    outbound.put("settings", settings)
+                }
+                else -> { // vless
+                    outbound.put("protocol", "vless")
+                    val settings = JSONObject()
+                    val vnext = JSONArray()
+                    val server = JSONObject()
+                    server.put("address", config.address)
+                    server.put("port", config.port)
+                    val users = JSONArray()
+                    val user = JSONObject()
+                    user.put("id", config.uuid)
+                    user.put("encryption", "none")
+                    if (!config.flow.isNullOrBlank()) user.put("flow", config.flow)
+                    users.put(user)
+                    server.put("users", users)
+                    vnext.put(server)
+                    settings.put("vnext", vnext)
+                    outbound.put("settings", settings)
+                }
+            }
 
-            val users = JSONArray()
-            val user = JSONObject()
-            user.put("id", config.uuid)
-            user.put("encryption", "none")
-            if (!config.flow.isNullOrBlank()) user.put("flow", config.flow)
-            users.put(user)
-            server.put("users", users)
-            vnext.put(server)
-            settings.put("vnext", vnext)
-            outbound.put("settings", settings)
-
+            // Stream Settings (مشترک بین همه)
             val streamSettings = JSONObject()
             streamSettings.put("network", config.networkType.ifBlank { "tcp" })
             streamSettings.put("security", config.security.ifBlank { "none" })
