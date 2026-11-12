@@ -38,8 +38,8 @@ private data class HealCandidate(
 object Diagnostician {
 
     enum class HealMode {
-        QUICK,  // فقط TCP
-        DEEP    // TCP + Real Delay
+        QUICK,  // فقط TCP (سریع)
+        DEEP    // TCP + Real Delay + تست پایداری
     }
 
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
@@ -80,6 +80,8 @@ object Diagnostician {
                     if (realDelay.delayMs != null) append("Real Delay: ${realDelay.delayMs}ms\n")
                     if (tcp.latencyMs != null) append("TCP RTT: ${tcp.latencyMs}ms\n")
                     if (tlsOk == true) append("TLS: موفق\n")
+                    if (!realDelay.ip.isNullOrBlank()) append("IP خروجی: ${realDelay.ip}\n")
+                    if (!realDelay.country.isNullOrBlank()) append("کشور خروجی: ${formatCountry(realDelay.country)}\n")
                 }
             }
             tlsOk == false -> {
@@ -98,6 +100,8 @@ object Diagnostician {
                     append("TCP وصل شد ولی Real Delay برقرار نشد (تونل خراب است).\n")
                     append("نوع سرور: ${serverTypeLabel(serverType)}\n")
                     if (realDelay.error != null) append("خطا: ${realDelay.error}")
+                    if (!realDelay.ip.isNullOrBlank()) append("\nIP خروجی: ${realDelay.ip}")
+                    if (!realDelay.country.isNullOrBlank()) append("\nکشور خروجی: ${formatCountry(realDelay.country)}")
                 }
             }
         }
@@ -110,6 +114,9 @@ object Diagnostician {
         )
     }
 
+    /**
+     * ترمیم کانفیگ با اسکن سه‌مرحله‌ای و تست پایداری
+     */
     suspend fun healConfig(
         context: Context, 
         config: VlessConfig,
@@ -163,9 +170,46 @@ object Diagnostician {
             return@withContext null
         }
 
-        onProgress("انتخاب بهترین کانفیگ...")
-        val best = realDelayPassed.minByOrNull { it.realDelayMs }
-        return@withContext best?.config
+        // ۳. مرحله سوم: تست پایداری روی ۳ کاندیدای برتر
+        val topCandidates = realDelayPassed.sortedBy { it.realDelayMs }.take(3)
+        
+        onProgress("مرحله ۳: تست پایداری روی ${topCandidates.size} کاندیدای برتر...")
+        
+        var bestStableConfig: VlessConfig? = null
+        var bestAvgDelay = Long.MAX_VALUE
+        
+        for ((index, candidate) in topCandidates.withIndex()) {
+            onProgress("مرحله ۳: تست پایداری ${index + 1} از ${topCandidates.size} (${candidate.config.address})")
+            
+            val delays = mutableListOf<Long>()
+            var successCount = 0
+            
+            // ۳ بار تست می‌کنیم
+            repeat(3) { attempt ->
+                val result = XrayRealDelayTester.test(context, candidate.config, timeoutMs = 5000)
+                if (result.ok && result.delayMs != null) {
+                    delays.add(result.delayMs)
+                    successCount++
+                }
+            }
+            
+            // اگه حداقل ۲ بار از ۳ بار موفق بود، پایدار محسوب می‌شه
+            if (successCount >= 2) {
+                val avgDelay = delays.average().toLong()
+                if (avgDelay < bestAvgDelay) {
+                    bestAvgDelay = avgDelay
+                    bestStableConfig = candidate.config
+                }
+            }
+        }
+        
+        if (bestStableConfig == null) {
+            onProgress("هیچ کاندیدای پایداری پیدا نشد. استفاده از بهترین گزینه‌ی قبلی...")
+            return@withContext realDelayPassed.minByOrNull { it.realDelayMs }?.config
+        }
+        
+        onProgress("بهترین کانفیگ پایدار انتخاب شد (میانگین ${bestAvgDelay}ms).")
+        return@withContext bestStableConfig
     }
 
     private fun serverTypeLabel(type: ServerType): String = when (type) {
@@ -174,4 +218,41 @@ object Diagnostician {
         ServerType.DIRECT -> "سرور مستقیم"
         ServerType.UNKNOWN -> "نامشخص"
     }
+}
+
+// توابع کمکی برای نمایش کشور و پرچم
+fun formatCountry(code: String?): String {
+    if (code.isNullOrBlank()) return "-"
+    val name = when (code.uppercase()) {
+        "US" -> "آمریکا"
+        "DE" -> "آلمان"
+        "NL" -> "هلند"
+        "FR" -> "فرانسه"
+        "GB" -> "انگلستان"
+        "TR" -> "ترکیه"
+        "AE" -> "امارات"
+        "CA" -> "کانادا"
+        "FI" -> "فنلاند"
+        "SE" -> "سوئد"
+        "RU" -> "روسیه"
+        "IR" -> "ایران"
+        "SG" -> "سنگاپور"
+        "JP" -> "ژاپن"
+        "IN" -> "هند"
+        "PL" -> "لهستان"
+        "AT" -> "اتریش"
+        "CH" -> "سوئیس"
+        "IT" -> "ایتالیا"
+        "ES" -> "اسپانیا"
+        else -> code.uppercase()
+    }
+    val flag = getFlagEmoji(code)
+    return "$flag $name ($code)".trim()
+}
+
+fun getFlagEmoji(countryCode: String): String {
+    if (countryCode.length != 2) return ""
+    val firstLetter = Character.codePointAt(countryCode, 0) - 0x41 + 0x1F1E6
+    val secondLetter = Character.codePointAt(countryCode, 1) - 0x41 + 0x1F1E6
+    return String(Character.toChars(firstLetter)) + String(Character.toChars(secondLetter))
 }
