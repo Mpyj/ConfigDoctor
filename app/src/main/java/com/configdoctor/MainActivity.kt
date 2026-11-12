@@ -42,6 +42,7 @@ import com.configdoctor.diagnose.ServerType
 import com.configdoctor.parser.VlessParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -145,7 +146,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                     Column(modifier = Modifier.padding(20.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 "لینک کانفیگ خود را وارد کنید",
                                 fontWeight = FontWeight.Bold,
@@ -212,7 +213,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                                 .size(24.dp)
                                 .rotate(rotation)
                         )
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                     }
                     Text(
                         if (isLoading) "در حال بررسی..." else "شروع تشخیص",
@@ -238,7 +239,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(Icons.Rounded.Error, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = errorText ?: "",
                                 color = MaterialTheme.colorScheme.onErrorContainer,
@@ -388,7 +389,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                         Column(modifier = Modifier.padding(20.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color(0xFF2E7D32), modifier = Modifier.size(28.dp))
-                                Spacer(Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text("کانفیگ با موفقیت ترمیم شد!", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32), fontSize = 18.sp)
                             }
                             Spacer(modifier = Modifier.height(16.dp))
@@ -429,7 +430,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
             }
         }
 
-        // دیالوگ انتخاب حالت ترمیم
+        // دیالوگ انتخاب حالت ترمیم (اصلاح‌شده)
         if (showHealDialog && diagnosisResult != null) {
             AlertDialog(
                 onDismissRequest = { showHealDialog = false },
@@ -451,6 +452,34 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                     }
                 },
                 confirmButton = {
+                    // دکمه ترمیم سریع (اول اجرا میشه)
+                    TextButton(
+                        onClick = {
+                            showHealDialog = false
+                            isHealing = true
+                            healingProgress = "شروع ترمیم (حالت سریع)..."
+                            scope.launch {
+                                val res = diagnosisResult!!
+                                val healedConfig = Diagnostician.healConfig(
+                                    activity, res.config, Diagnostician.HealMode.QUICK
+                                ) { progress ->
+                                    scope.launch(Dispatchers.Main) { healingProgress = progress }
+                                }
+                                if (healedConfig != null) {
+                                    healedLink = VlessParser.buildLink(healedConfig)
+                                } else {
+                                    errorText = "❌ متاسفانه مسیر سالمی پیدا نشد."
+                                }
+                                isHealing = false
+                                healingProgress = ""
+                            }
+                        }
+                    ) {
+                        Text("ترمیم سریع")
+                    }
+                },
+                dismissButton = {
+                    // دکمه ترمیم کامل (دوم اجرا میشه)
                     Button(
                         onClick = {
                             showHealDialog = false
@@ -475,32 +504,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                     ) {
                         Text("ترمیم کامل (بهترین)")
-                    }
-                },
-                dismissButton = {
-                    OutlinedButton(
-                        onClick = {
-                            showHealDialog = false
-                            isHealing = true
-                            healingProgress = "شروع ترمیم (حالت سریع)..."
-                            scope.launch {
-                                val res = diagnosisResult!!
-                                val healedConfig = Diagnostician.healConfig(
-                                    activity, res.config, Diagnostician.HealMode.QUICK
-                                ) { progress ->
-                                    scope.launch(Dispatchers.Main) { healingProgress = progress }
-                                }
-                                if (healedConfig != null) {
-                                    healedLink = VlessParser.buildLink(healedConfig)
-                                } else {
-                                    errorText = "❌ متاسفانه مسیر سالمی پیدا نشد."
-                                }
-                                isHealing = false
-                                healingProgress = ""
-                            }
-                        }
-                    ) {
-                        Text("ترمیم سریع")
                     }
                 }
             )
@@ -607,7 +610,7 @@ fun DetailGrid(res: DiagnosisResult) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             DetailItemCard(
                 title = "کشور خروجی",
-                value = formatCountry(res.outputCountry),
+                value = formatCountry(res.outputCountry), // اینجا پرچم اضافه میشه
                 icon = Icons.Rounded.Flag,
                 color = Color(0xFF3F51B5),
                 modifier = Modifier.fillMaxWidth()
@@ -657,21 +660,49 @@ fun serverTypeLabel(type: ServerType): String = when (type) {
     ServerType.UNKNOWN -> "نامشخص"
 }
 
+/**
+ * تبدیل کد کشور به نام فارسی به همراه پرچم
+ * از روش تبدیل حروف انگلیسی به Regional Indicator Symbol استفاده می‌کنیم
+ */
 fun formatCountry(code: String?): String {
     if (code.isNullOrBlank()) return "-"
-    return when (code.uppercase()) {
-        "US" -> "آمریکا (US)"
-        "DE" -> "آلمان (DE)"
-        "NL" -> "هلند (NL)"
-        "FR" -> "فرانسه (FR)"
-        "GB" -> "انگلستان (GB)"
-        "TR" -> "ترکیه (TR)"
-        "AE" -> "امارات (AE)"
-        "CA" -> "کانادا (CA)"
-        "FI" -> "فنلاند (FI)"
-        "SE" -> "سوئد (SE)"
-        "RU" -> "روسیه (RU)"
-        "IR" -> "ایران (IR)"
+    
+    val name = when (code.uppercase()) {
+        "US" -> "آمریکا"
+        "DE" -> "آلمان"
+        "NL" -> "هلند"
+        "FR" -> "فرانسه"
+        "GB" -> "انگلستان"
+        "TR" -> "ترکیه"
+        "AE" -> "امارات"
+        "CA" -> "کانادا"
+        "FI" -> "فنلاند"
+        "SE" -> "سوئد"
+        "RU" -> "روسیه"
+        "IR" -> "ایران"
+        "SG" -> "سنگاپور"
+        "JP" -> "ژاپن"
+        "IN" -> "هند"
+        "PL" -> "لهستان"
+        "AT" -> "اتریش"
+        "CH" -> "سوئیس"
+        "IT" -> "ایتالیا"
+        "ES" -> "اسپانیا"
         else -> code.uppercase()
     }
+    
+    // تولید پرچم از کد دو حرفی
+    val flag = getFlagEmoji(code)
+    
+    return "$flag $name ($code)".trim()
+}
+
+/**
+ * تبدیل کد دو حرفی کشور (مثل "US") به ایموجی پرچم (🇺🇸)
+ */
+fun getFlagEmoji(countryCode: String): String {
+    if (countryCode.length != 2) return ""
+    val firstLetter = Character.codePointAt(countryCode, 0) - 0x41 + 0x1F1E6
+    val secondLetter = Character.codePointAt(countryCode, 1) - 0x41 + 0x1F1E6
+    return String(Character.toChars(firstLetter)) + String(Character.toChars(secondLetter))
 }
