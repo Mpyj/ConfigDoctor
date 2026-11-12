@@ -61,13 +61,9 @@ object XrayRealDelayTester {
         }
     }
 
-    /**
-     * باز کردن تونل موقت با CoreController، گرفتن IP و کشور، و بستن تونل
-     */
     private fun fetchIpAndCountry(config: VlessConfig): Pair<String?, String?> {
-        val xrayJson = buildXrayConfigJson(config) ?: return null to null
+        val xrayJson = buildXrayConfigJson(config) ?: return Pair(null, null)
         
-        // پیاده‌سازی درست CoreCallbackHandler
         val callback = object : CoreCallbackHandler {
             override fun startup(): Long = 0L
             override fun shutdown(): Long = 0L
@@ -77,26 +73,20 @@ object XrayRealDelayTester {
         val controller = CoreController(callback)
         
         return try {
-            // ۱. باز کردن تونل موقت
             controller.startLoop(xrayJson, 0)
-            
-            // ۲. صبر برای بالا اومدن تونل
             Thread.sleep(1000)
             
-            // ۳. اول سراغ Cloudflare Trace میریم
             var result = fetchFromCloudflareTrace()
             
-            // ۴. اگه کلادفلر جواب نداد، برو سراغ Ipify
             if (result.first == null) {
                 result = fetchFromIpify()
             }
             
-            // ۵. بستن تونل
             controller.stopLoop()
             result
         } catch (e: Exception) {
             try { controller.stopLoop() } catch (_: Exception) {}
-            null to null
+            Pair(null, null)
         }
     }
 
@@ -109,7 +99,9 @@ object XrayRealDelayTester {
             conn.readTimeout = 5000
             conn.requestMethod = "GET"
 
-            if (conn.responseCode != 200) return null to null
+            if (conn.responseCode != 200) {
+                return Pair(null, null)
+            }
 
             val body = conn.inputStream.bufferedReader().readText()
             var ip: String? = null
@@ -118,9 +110,9 @@ object XrayRealDelayTester {
                 if (line.startsWith("ip=")) ip = line.removePrefix("ip=").trim()
                 if (line.startsWith("loc=")) country = line.removePrefix("loc=").trim()
             }
-            ip to country
+            Pair(ip, country)
         } catch (e: Exception) {
-            null to null
+            Pair(null, null)
         }
     }
 
@@ -132,16 +124,18 @@ object XrayRealDelayTester {
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
 
-            if (conn.responseCode != 200) return null to null
+            if (conn.responseCode != 200) {
+                return Pair(null, null)
+            }
 
             val body = conn.inputStream.bufferedReader().readText()
             val json = JSONObject(body)
             val ip = json.optString("ip", null)
             
             val country = if (ip != null) fetchCountryFromIpApi(ip) else null
-            ip to country
+            Pair(ip, country)
         } catch (e: Exception) {
-            null to null
+            Pair(null, null)
         }
     }
 
