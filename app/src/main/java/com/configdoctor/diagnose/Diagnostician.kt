@@ -122,7 +122,7 @@ object Diagnostician {
     ): VlessConfig? = withContext(Dispatchers.IO) {
         val baseConfig = if (config.port <= 0) config.copy(port = 443) else config
 
-        onProgress("در حال تولید IPهای جدید...")
+        onProgress("تولید IPهای جدید...")
         val randomIps = CloudflareCleanIps.generateRandomIps(100)
         
         val ipv6Candidates = randomIps.filter { it.contains(":") }
@@ -209,12 +209,16 @@ object Diagnostician {
     suspend fun diagnoseBatch(
         context: Context,
         links: List<String>,
-        onProgress: (String) -> Unit = {}
+        onProgress: (String, Float) -> Unit = { _, _ -> }
     ): List<Pair<String, DiagnosisResult?>> = withContext(Dispatchers.IO) {
         val results = mutableListOf<Pair<String, DiagnosisResult?>>()
+        val total = links.size
         for ((index, link) in links.withIndex()) {
-            onProgress("تست ${index + 1} از ${links.size}...")
+            val percent = index.toFloat() / total.toFloat()
             val parsed = com.configdoctor.parser.ConfigParserFactory.parse(link)
+            val ipText = parsed.getOrNull()?.address ?: "ناشناس"
+            onProgress("در حال تست کانفیگ ${index + 1} از $total (آی‌پی: $ipText)", percent)
+            
             parsed.fold(
                 onSuccess = { config ->
                     try {
@@ -229,6 +233,7 @@ object Diagnostician {
                 }
             )
         }
+        onProgress("تست کامل شد", 1f)
         return@withContext results
     }
 
@@ -236,14 +241,21 @@ object Diagnostician {
         context: Context,
         configs: List<VlessConfig>,
         mode: HealMode = HealMode.QUICK,
-        onProgress: (String) -> Unit = {}
+        onProgress: (String, Float) -> Unit = { _, _ -> }
     ): List<Pair<VlessConfig, VlessConfig?>> = withContext(Dispatchers.IO) {
         val healed = mutableListOf<Pair<VlessConfig, VlessConfig?>>()
+        val total = configs.size
         for ((index, config) in configs.withIndex()) {
-            onProgress("ترمیم ${index + 1} از ${configs.size}...")
-            val healedConfig = healConfig(context, config, mode, onProgress)
+            val percent = index.toFloat() / total.toFloat()
+            onProgress("در حال ترمیم کانفیگ ${index + 1} از $total (آی‌پی: ${config.address})", percent)
+            
+            val healedConfig = healConfig(context, config, mode) { progressMsg ->
+                // وضعیت داخلی رو با درصد کلی ترکیب می‌کنیم
+                onProgress("ترمیم ${index + 1} از $total: $progressMsg", percent)
+            }
             healed.add(config to healedConfig)
         }
+        onProgress("ترمیم کامل شد", 1f)
         return@withContext healed
     }
 
