@@ -30,7 +30,7 @@ data class DiagnosisResult(
     val summary: String
 )
 
-// یک کلاس داخلی برای نگه‌داری کاندیدای ترمیم
+// یک کلاس داخلی برای نگه‌داری کاندیدای ترمیم و تاخیرش
 private data class HealCandidate(
     val config: VlessConfig,
     val realDelayMs: Long
@@ -107,53 +107,61 @@ object Diagnostician {
     }
 
     /**
-     * ترمیم کانفیگ: تست همه‌ی کاندیداها و انتخاب بهترین (کمترین Real Delay)
+     * ترمیم کانفیگ: اسکن سه‌مرحله‌ای با تولید IPهای تصادفی از رنج‌های رسمی کلادفلر
+     * @param onProgress یک callback برای گزارش وضعیت به UI
      */
-    suspend fun healConfig(context: Context, config: VlessConfig): VlessConfig? = withContext(Dispatchers.IO) {
+    suspend fun healConfig(
+        context: Context, 
+        config: VlessConfig,
+        onProgress: (String) -> Unit = {}
+    ): VlessConfig? = withContext(Dispatchers.IO) {
         val baseConfig = if (config.port <= 0) config.copy(port = 443) else config
+
+        onProgress("در حال تولید IPهای جدید...")
+        val randomIps = CloudflareCleanIps.generateRandomIps(100)
         
-        // ۱. ساخت لیست کاندیداها (هم IPv6 و هم IPv4 از لیست‌های مختلف)
-        val currentIps = try {
-            InetAddress.getAllByName(baseConfig.address).map { it.hostAddress }
-        } catch (e: Exception) { emptyList() }
+        val ipv6Candidates = randomIps.filter { it.contains(":") }
+        val ipv4Candidates = randomIps.filter { it.contains(".") }
+        val allCandidates = (ipv6Candidates + ipv4Candidates).distinct()
 
-        val hasIpv4 = currentIps.any { it.contains(".") }
-        val hasIpv6 = currentIps.any { it.contains(":") }
-
-        val candidates = mutableListOf<String>()
-
-        // اولویت با نسخه‌ی مخالف است
-        if (hasIpv4) currentIps.filter { it.contains(":") }.forEach { candidates.add(it) }
-        if (hasIpv6) currentIps.filter { it.contains(".") }.forEach { candidates.add(it) }
-
-        // اضافه کردن IPهای تمیز کلادفلر (هم IPv6 و هم IPv4)
-        val ipv6Clean = CloudflareCleanIps.ips.filter { it.contains(":") }
-        val ipv4Clean = CloudflareCleanIps.ips.filter { it.contains(".") }
-        
-        candidates.addAll(ipv6Clean)
-        candidates.addAll(ipv4Clean)
-
-        // ۲. تست همه‌ی کاندیداها و جمع‌آوری نتایج موفق
-        val successfulCandidates = mutableListOf<HealCandidate>()
-
-        for (candidateIp in candidates.distinct()) {
-            val newConfig = baseConfig.copy(address = candidateIp)
-            
-            // تست سریع TCP (برای رد کردن IPهای سوخته)
-            val tcpTest = TcpTester.test(candidateIp, baseConfig.port, timeoutMs = 2000)
-            if (tcpTest.ok) {
-                // تست Real Delay (برای اطمینان از سالم بودن تونل)
-                val realDelayTest = XrayRealDelayTester.test(context, newConfig, timeoutMs = 4000)
-                if (realDelayTest.ok && realDelayTest.delayMs != null) {
-                    successfulCandidates.add(HealCandidate(newConfig, realDelayTest.delayMs!!))
-                }
+        onProgress("مرحله ۱: غربالگری ${allCandidates.size} IP...")
+        val tcpPassed = mutableListOf<String>()
+        for ((index, ip) in allCandidates.withIndex()) {
+            // هر ۱۰ تا یه بار پیشرفت رو آپدیت کن (برای اینکه UI کند نشه)
+            if (index % 10 == 0) {
+                onProgress("مرحله ۱: تست ${index + 1} از ${allCandidates.size}")
+            }
+            if (TcpTester.test(ip, baseConfig.port, timeoutMs = 1000).ok) {
+                tcpPassed.add(ip)
             }
         }
-
-        // ۳. انتخاب بهترین (کمترین Real Delay)
-        val bestCandidate = successfulCandidates.minByOrNull { it.realDelayMs }
         
-        return@withContext bestCandidate?.config
+        if (tcpPassed.isEmpty()) {
+            onProgress("هیچ IP سالمی در مرحله ۱ پیدا نشد.")
+            return@withContext null
+        }
+
+        val toTestRealDelay = tcpPassed.take(20)
+        onProgress("مرحله ۲: تست Real Delay روی ${toTestRealDelay.size} IP...")
+        val realDelayPassed = mutableListOf<HealCandidate>()
+        
+        for ((index, ip) in toTestRealDelay.withIndex()) {
+            onProgress("مرحله ۲: تست ${index + 1} از ${toTestRealDelay.size} ($ip)")
+            val newConfig = baseConfig.copy(address = ip)
+            val result = XrayRealDelayTester.test(context, newConfig, timeoutMs = 5000)
+            if (result.ok && result.delayMs != null) {
+                realDelayPassed.add(HealCandidate(newConfig, result.delayMs))
+            }
+        }
+        
+        if (realDelayPassed.isEmpty()) {
+            onProgress("هیچ تونل سالمی در مرحله ۲ پیدا نشد.")
+            return@withContext null
+        }
+
+        onProgress("انتخاب بهترین کانفیگ...")
+        val best = realDelayPassed.minByOrNull { it.realDelayMs }
+        return@withContext best?.config
     }
 
     private fun serverTypeLabel(type: ServerType): String = when (type) {

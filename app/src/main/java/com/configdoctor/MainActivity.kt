@@ -40,6 +40,7 @@ import com.configdoctor.diagnose.Diagnostician
 import com.configdoctor.diagnose.OverallStatus
 import com.configdoctor.diagnose.ServerType
 import com.configdoctor.parser.VlessParser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -76,6 +77,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
     var errorText by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var isHealing by remember { mutableStateOf(false) }
+    var healingProgress by remember { mutableStateOf("") }
     
     val scope = rememberCoroutineScope()
     val context = activity.applicationContext
@@ -316,14 +318,20 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                                 Button(
                                     onClick = {
                                         isHealing = true
+                                        healingProgress = "شروع ترمیم..."
                                         scope.launch {
-                                            val healedConfig = Diagnostician.healConfig(activity, res.config)
+                                            val healedConfig = Diagnostician.healConfig(activity, res.config) { progress ->
+                                                scope.launch(Dispatchers.Main) {
+                                                    healingProgress = progress
+                                                }
+                                            }
                                             if (healedConfig != null) {
                                                 healedLink = VlessParser.buildLink(healedConfig)
                                             } else {
                                                 errorText = "❌ متاسفانه مسیر سالمی پیدا نشد."
                                             }
                                             isHealing = false
+                                            healingProgress = ""
                                         }
                                     },
                                     modifier = Modifier.weight(1f).height(50.dp),
@@ -343,6 +351,37 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                                         Spacer(Modifier.width(6.dp))
                                         Text("ترمیم خودکار", fontWeight = FontWeight.Bold)
                                     }
+                                }
+                            }
+                        }
+
+                        // نمایش پیشرفت ترمیم
+                        AnimatedVisibility(visible = isHealing && healingProgress.isNotEmpty()) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(Modifier.width(12.dp))
+                                        Text(
+                                            text = "در حال ترمیم...",
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = healingProgress,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
                                 }
                             }
                         }
@@ -526,7 +565,7 @@ fun DetailItemCard(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
