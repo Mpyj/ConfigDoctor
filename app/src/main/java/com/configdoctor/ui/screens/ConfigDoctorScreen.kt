@@ -31,12 +31,14 @@ import androidx.compose.ui.unit.sp
 import com.configdoctor.MainActivity
 import com.configdoctor.data.AppDatabase
 import com.configdoctor.data.HistoryEntity
+import com.configdoctor.data.SettingsManager
 import com.configdoctor.diagnose.DiagnosisResult
 import com.configdoctor.diagnose.Diagnostician
 import com.configdoctor.diagnose.OverallStatus
 import com.configdoctor.parser.ConfigParserFactory
 import com.configdoctor.ui.components.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +58,7 @@ fun ConfigDoctorScreen(
     var showHealDialog by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
     var showBatchScreen by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val context = activity.applicationContext
@@ -78,6 +81,11 @@ fun ConfigDoctorScreen(
 
     if (showBatchScreen) {
         BatchScreen(activity = activity, onBack = { showBatchScreen = false })
+        return
+    }
+
+    if (showSettings) {
+        SettingsScreen(onBack = { showSettings = false })
         return
     }
 
@@ -114,12 +122,17 @@ fun ConfigDoctorScreen(
                     modifier = Modifier.size(48.dp),
                     tint = Color(0xFF6C63FF)
                 )
-                IconButton(onClick = onToggleTheme) {
-                    Icon(
-                        if (isDarkTheme) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
-                        contentDescription = "تغییر تم",
-                        tint = if (isDarkTheme) Color.White else Color.Black
-                    )
+                Row {
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Rounded.Settings, contentDescription = "تنظیمات", tint = if (isDarkTheme) Color.White else Color.Black)
+                    }
+                    IconButton(onClick = onToggleTheme) {
+                        Icon(
+                            if (isDarkTheme) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                            contentDescription = "تغییر تم",
+                            tint = if (isDarkTheme) Color.White else Color.Black
+                        )
+                    }
                 }
             }
 
@@ -138,7 +151,6 @@ fun ConfigDoctorScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // کارت ورودی
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -175,7 +187,6 @@ fun ConfigDoctorScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // دکمه تشخیص
             Button(
                 onClick = {
                     if (link.isBlank()) {
@@ -231,7 +242,6 @@ fun ConfigDoctorScreen(
                 Text(if (isLoading) "در حال بررسی..." else "شروع تشخیص", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
 
-            // دکمه‌های تاریخچه و تست گروهی
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -260,12 +270,14 @@ fun ConfigDoctorScreen(
             }
 
             AnimatedVisibility(visible = showHistory) {
-                HistorySection(historyList)
+                HistorySection(
+                    historyList = historyList,
+                    onClear = { scope.launch { historyDao.clearAll() } }
+                )
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // خطا
             AnimatedVisibility(visible = errorText != null) {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F)),
@@ -280,7 +292,6 @@ fun ConfigDoctorScreen(
                 }
             }
 
-            // Empty State
             AnimatedVisibility(visible = diagnosisResult == null && !isLoading && errorText == null) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
@@ -309,7 +320,6 @@ fun ConfigDoctorScreen(
                 }
             }
 
-            // نتیجه
             AnimatedVisibility(visible = diagnosisResult != null) {
                 Column {
                     val res = diagnosisResult!!
@@ -373,7 +383,6 @@ fun ConfigDoctorScreen(
                 }
             }
 
-            // لینک ترمیم‌شده
             AnimatedVisibility(visible = healedLink != null) {
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
@@ -431,6 +440,16 @@ fun ConfigDoctorScreen(
                         }
                         if (healedConfig != null) {
                             healedLink = ConfigParserFactory.buildLink(healedConfig)
+                            historyDao.insert(
+                                HistoryEntity(
+                                    link = healedLink!!,
+                                    timestamp = System.currentTimeMillis(),
+                                    status = "HEALED",
+                                    outputIp = res.outputIp,
+                                    outputCountry = res.outputCountry,
+                                    realDelayMs = res.realDelayMs
+                                )
+                            )
                         } else {
                             errorText = "❌ متاسفانه مسیر سالمی پیدا نشد."
                         }
@@ -449,6 +468,16 @@ fun ConfigDoctorScreen(
                         }
                         if (healedConfig != null) {
                             healedLink = ConfigParserFactory.buildLink(healedConfig)
+                            historyDao.insert(
+                                HistoryEntity(
+                                    link = healedLink!!,
+                                    timestamp = System.currentTimeMillis(),
+                                    status = "HEALED",
+                                    outputIp = res.outputIp,
+                                    outputCountry = res.outputCountry,
+                                    realDelayMs = res.realDelayMs
+                                )
+                            )
                         } else {
                             errorText = "❌ متاسفانه مسیر سالمی پیدا نشد."
                         }

@@ -204,7 +204,7 @@ object Diagnostician {
         return@withContext bestStableConfig
     }
 
-    // --- توابع جدید برای تست و ترمیم گروهی ---
+    // --- توابع گروهی ---
 
     suspend fun diagnoseBatch(
         context: Context,
@@ -235,12 +235,14 @@ object Diagnostician {
     suspend fun healBatch(
         context: Context,
         configs: List<VlessConfig>,
+        mode: HealMode = HealMode.QUICK,
         onProgress: (String) -> Unit = {}
-    ): List<VlessConfig?> = withContext(Dispatchers.IO) {
-        val healed = mutableListOf<VlessConfig?>()
+    ): List<Pair<VlessConfig, VlessConfig?>> = withContext(Dispatchers.IO) {
+        val healed = mutableListOf<Pair<VlessConfig, VlessConfig?>>()
         for ((index, config) in configs.withIndex()) {
             onProgress("ترمیم ${index + 1} از ${configs.size}...")
-            healed.add(healConfig(context, config, HealMode.QUICK, onProgress))
+            val healedConfig = healConfig(context, config, mode, onProgress)
+            healed.add(config to healedConfig)
         }
         return@withContext healed
     }
