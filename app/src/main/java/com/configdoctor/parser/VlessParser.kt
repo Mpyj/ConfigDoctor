@@ -3,9 +3,11 @@ package com.configdoctor.parser
 import android.net.Uri
 import com.configdoctor.model.VlessConfig
 
-object VlessParser {
+object VlessParser : ConfigParser {
 
-    fun parse(link: String): Result<VlessConfig> {
+    override fun canParse(link: String): Boolean = link.startsWith("vless://", ignoreCase = true)
+
+    override fun parse(link: String): Result<VlessConfig> {
         val trimmed = link.trim()
         if (!trimmed.startsWith("vless://", ignoreCase = true)) {
             return Result.failure(IllegalArgumentException("لینک باید با vless:// شروع بشه"))
@@ -15,13 +17,10 @@ object VlessParser {
             val uri = Uri.parse(trimmed)
             val uuid = uri.userInfo ?: return Result.failure(IllegalArgumentException("UUID پیدا نشد"))
             
-            // ۱. استخراج آدرس (host)
             var address = uri.host
             if (address.isNullOrBlank()) {
-                // تلاش برای استخراج دستی از authority (مخصوصاً وقتی براکت IPv6 وجود داره)
                 val authority = uri.authority ?: ""
                 val withoutUser = authority.substringAfter("@", authority)
-                // اگر IPv6 داخل براکت باشه، تا قبل از ] رو برمیداریم
                 address = if (withoutUser.contains("[")) {
                     withoutUser.substringAfter("[").substringBefore("]")
                 } else {
@@ -33,10 +32,8 @@ object VlessParser {
                 return Result.failure(IllegalArgumentException("آدرس سرور پیدا نشد"))
             }
 
-            // ۲. استخراج پورت (اگه نبود، 443)
             var port = uri.port
             if (port <= 0) {
-                // تلاش برای استخراج دستی پورت از authority
                 val authority = uri.authority ?: ""
                 val parts = authority.substringAfter("@", authority).split(":")
                 if (parts.size > 1) {
@@ -53,6 +50,7 @@ object VlessParser {
 
             val config = VlessConfig(
                 rawLink = trimmed,
+                protocol = "vless",
                 uuid = uuid,
                 address = address,
                 port = port,
@@ -72,10 +70,8 @@ object VlessParser {
         }
     }
 
-    // ساخت لینک با استفاده از URI استاندارد جاوا (جلوگیری از باگ‌های اندروید)
-    fun buildLink(config: VlessConfig): String {
+    override fun buildLink(config: VlessConfig): String {
         return try {
-            // چک میکنیم اگه IPv6 بود، داخل براکت بذاریم
             val formattedAddress = if (config.address.contains(":")) "[${config.address}]" else config.address
 
             val sb = StringBuilder()
@@ -86,7 +82,6 @@ object VlessParser {
             sb.append(":")
             sb.append(if (config.port > 0) config.port else 443)
             
-            // ساخت Query String
             val queryParams = mutableListOf<String>()
             queryParams.add("security=${config.security}")
             queryParams.add("type=${config.networkType}")
@@ -105,7 +100,6 @@ object VlessParser {
 
             sb.toString()
         } catch (e: Exception) {
-            // فالبک در صورت خطا
             "vless://${config.uuid}@${config.address}:${if (config.port > 0) config.port else 443}?security=${config.security}&type=${config.networkType}"
         }
     }
