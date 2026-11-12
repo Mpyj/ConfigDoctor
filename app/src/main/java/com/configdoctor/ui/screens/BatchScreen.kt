@@ -29,7 +29,10 @@ import com.configdoctor.diagnose.OverallStatus
 import com.configdoctor.parser.ConfigParserFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.URL
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BatchScreen(
     activity: MainActivity,
@@ -43,9 +46,37 @@ fun BatchScreen(
     var linksText by remember { mutableStateOf("") }
     var isTesting by remember { mutableStateOf(false) }
     var isHealing by remember { mutableStateOf(false) }
+    var isFetchingSub by remember { mutableStateOf(false) }
     var progressText by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Pair<String, DiagnosisResult?>>>(emptyList()) }
     var showHealModeDialog by remember { mutableStateOf(false) }
+
+    // تابع دریافت ساب
+    val fetchSubscription: (String) -> Unit = { url ->
+        isFetchingSub = true
+        scope.launch {
+            val content = withContext(Dispatchers.IO) {
+                try {
+                    URL(url).readText()
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (content != null) {
+                // محتوای ساب معمولاً Base64 هست، باید دیکد بشه
+                val decoded = try {
+                    String(android.util.Base64.decode(content, android.util.Base64.DEFAULT))
+                } catch (e: Exception) {
+                    content
+                }
+                linksText = decoded
+                Toast.makeText(context, "ساب دریافت شد", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "خطا در دریافت ساب", Toast.LENGTH_SHORT).show()
+            }
+            isFetchingSub = false
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -59,20 +90,43 @@ fun BatchScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("تست گروهی", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+            Text("تست گروهی / ساب", fontWeight = FontWeight.Bold, fontSize = 20.sp)
             IconButton(onClick = onBack) {
                 Icon(Icons.Rounded.ArrowBack, contentDescription = null)
             }
         }
         Spacer(Modifier.height(16.dp))
 
+        // ورودی لینک ساب
+        var subUrl by remember { mutableStateOf("") }
+        OutlinedTextField(
+            value = subUrl,
+            onValueChange = { subUrl = it },
+            label = { Text("لینک ساب (https://...)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            trailingIcon = {
+                IconButton(onClick = { if (subUrl.isNotBlank()) fetchSubscription(subUrl) }) {
+                    Icon(Icons.Rounded.Download, contentDescription = "دریافت ساب")
+                }
+            }
+        )
+        
+        Spacer(Modifier.height(8.dp))
+
+        if (isFetchingSub) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Text("یا لینک‌ها را دستی وارد کنید (هر خط یک لینک):", fontSize = 12.sp, color = Color.Gray)
+
         OutlinedTextField(
             value = linksText,
             onValueChange = { linksText = it },
-            label = { Text("هر خط یک لینک") },
             modifier = Modifier.fillMaxWidth().height(150.dp),
             minLines = 5,
-            enabled = !isTesting && !isHealing
+            enabled = !isTesting && !isHealing && !isFetchingSub
         )
 
         Spacer(Modifier.height(16.dp))
@@ -104,12 +158,10 @@ fun BatchScreen(
         Spacer(Modifier.height(16.dp))
 
         if (results.isNotEmpty()) {
-            // خلاصه‌ی نتایج
             val healthyCount = results.count { it.second?.overallStatus == OverallStatus.HEALTHY }
             val deadCount = results.count { it.second?.overallStatus == OverallStatus.IP_DEAD || it.second?.overallStatus == OverallStatus.UNKNOWN }
 
-            Text("خلاصه نتایج", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("سالم: $healthyCount | خراب: $deadCount | کل: ${results.size}", fontSize = 14.sp)
+            Text("خلاصه نتایج: سالم $healthyCount | خراب $deadCount | کل ${results.size}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.height(8.dp))
 
             results.forEach { (link, result) ->
@@ -128,7 +180,6 @@ fun BatchScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // دکمه ترمیم گروهی (با انتخاب حالت)
             Button(
                 onClick = { showHealModeDialog = true },
                 modifier = Modifier.fillMaxWidth(),
@@ -140,7 +191,6 @@ fun BatchScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            // دکمه کپی همه
             OutlinedButton(
                 onClick = {
                     val allLinks = results.mapNotNull { it.second?.config }
@@ -148,7 +198,7 @@ fun BatchScreen(
                         .joinToString("\n")
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("batch_links", allLinks))
-                    Toast.makeText(context, "همه لینک‌های سالم کپی شدند", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "همه لینک‌ها کپی شدند", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -159,7 +209,6 @@ fun BatchScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // دکمه اشتراک‌گذاری
             OutlinedButton(
                 onClick = {
                     val allLinks = results.mapNotNull { it.second?.config }
@@ -169,23 +218,22 @@ fun BatchScreen(
                         type = "text/plain"
                         putExtra(Intent.EXTRA_TEXT, allLinks)
                     }
-                    context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری لینک‌ها"))
+                    context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری"))
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Rounded.Share, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(Modifier.width(8.dp))
                 Text("اشتراک‌گذاری همه لینک‌ها")
             }
         }
     }
 
-    // دیالوگ انتخاب حالت ترمیم گروهی
     if (showHealModeDialog) {
         AlertDialog(
             onDismissRequest = { showHealModeDialog = false },
             title = { Text("حالت ترمیم گروهی") },
-            text = { Text("حالت سریع سریع‌تره ولی حالت کامل دقیق‌تره.") },
+            text = { Text("حالت کامل دقیق‌تره ولی طولانی‌تره.") },
             confirmButton = {
                 TextButton(onClick = {
                     showHealModeDialog = false
@@ -202,7 +250,6 @@ fun BatchScreen(
     }
 }
 
-// تابع کمکی برای انجام ترمیم گروهی
 private fun performHealGroup(
     activity: MainActivity,
     results: List<Pair<String, DiagnosisResult?>>,
@@ -221,19 +268,9 @@ private fun performHealGroup(
                 pair
             }
         }
-        // ذخیره در تاریخچه
         for ((link, res) in newResults) {
             if (res != null) {
-                historyDao.insert(
-                    HistoryEntity(
-                        link = link,
-                        timestamp = System.currentTimeMillis(),
-                        status = res.overallStatus.name,
-                        outputIp = res.outputIp,
-                        outputCountry = res.outputCountry,
-                        realDelayMs = res.realDelayMs
-                    )
-                )
+                historyDao.insert(HistoryEntity(link = link, timestamp = System.currentTimeMillis(), status = res.overallStatus.name, outputIp = res.outputIp, outputCountry = res.outputCountry, realDelayMs = res.realDelayMs))
             }
         }
         onComplete(newResults)
