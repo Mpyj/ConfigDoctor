@@ -32,11 +32,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URL
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BatchScreen(
     activity: MainActivity,
-    onBack: () -> Unit
+    isDarkTheme: Boolean
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -51,7 +50,10 @@ fun BatchScreen(
     var results by remember { mutableStateOf<List<Pair<String, DiagnosisResult?>>>(emptyList()) }
     var showHealModeDialog by remember { mutableStateOf(false) }
 
-    // تابع دریافت ساب
+    val textColor = if (isDarkTheme) Color.White else Color.Black
+    val subTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
+
+    // تابع دریافت ساب (اصلاح‌شده)
     val fetchSubscription: (String) -> Unit = { url ->
         isFetchingSub = true
         scope.launch {
@@ -67,10 +69,20 @@ fun BatchScreen(
                 val decoded = try {
                     String(android.util.Base64.decode(content, android.util.Base64.DEFAULT))
                 } catch (e: Exception) {
-                    content
+                    content // اگه Base64 نبود، خودش رو استفاده کن
                 }
-                linksText = decoded
-                Toast.makeText(context, "ساب دریافت شد", Toast.LENGTH_SHORT).show()
+                
+                // فیلتر کردن خطوطی که واقعاً یه کانفیگ هستن
+                val configLines = decoded.lines().filter { line ->
+                    line.startsWith("vless://") || line.startsWith("vmess://") || line.startsWith("trojan://")
+                }
+                
+                if (configLines.isNotEmpty()) {
+                    linksText = configLines.joinToString("\n")
+                    Toast.makeText(context, "${configLines.size} کانفیگ از ساب دریافت شد", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "هیچ کانفیگی توی ساب پیدا نشد", Toast.LENGTH_SHORT).show()
+                }
             } else {
                 Toast.makeText(context, "خطا در دریافت ساب", Toast.LENGTH_SHORT).show()
             }
@@ -85,29 +97,25 @@ fun BatchScreen(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("تست گروهی / ساب", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-            IconButton(onClick = onBack) {
-                Icon(Icons.Rounded.ArrowBack, contentDescription = null)
-            }
-        }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
 
         // ورودی لینک ساب
         var subUrl by remember { mutableStateOf("") }
         OutlinedTextField(
             value = subUrl,
             onValueChange = { subUrl = it },
-            label = { Text("لینک ساب (https://...)") },
+            label = { Text("لینک ساب (https://...)", color = subTextColor) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color(0xFF6C63FF),
+                unfocusedBorderColor = subTextColor.copy(alpha = 0.3f),
+                focusedTextColor = textColor,
+                unfocusedTextColor = textColor
+            ),
             trailingIcon = {
                 IconButton(onClick = { if (subUrl.isNotBlank()) fetchSubscription(subUrl) }) {
-                    Icon(Icons.Rounded.Download, contentDescription = "دریافت ساب")
+                    Icon(Icons.Rounded.Download, contentDescription = "دریافت ساب", tint = Color(0xFF6C63FF))
                 }
             }
         )
@@ -115,18 +123,24 @@ fun BatchScreen(
         Spacer(Modifier.height(8.dp))
 
         if (isFetchingSub) {
-            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFF6C63FF))
         }
 
-        Spacer(Modifier.height(8.dp))
-        Text("یا لینک‌ها را دستی وارد کنید (هر خط یک لینک):", fontSize = 12.sp, color = Color.Gray)
+        Spacer(Modifier.height(12.dp))
+        Text("یا لینک‌ها را دستی وارد کنید (هر خط یک لینک):", fontSize = 12.sp, color = subTextColor)
 
         OutlinedTextField(
             value = linksText,
             onValueChange = { linksText = it },
             modifier = Modifier.fillMaxWidth().height(150.dp),
             minLines = 5,
-            enabled = !isTesting && !isHealing && !isFetchingSub
+            enabled = !isTesting && !isHealing && !isFetchingSub,
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color(0xFF6C63FF),
+                unfocusedBorderColor = subTextColor.copy(alpha = 0.3f),
+                focusedTextColor = textColor,
+                unfocusedTextColor = textColor
+            )
         )
 
         Spacer(Modifier.height(16.dp))
@@ -143,15 +157,16 @@ fun BatchScreen(
                     progressText = ""
                 }
             },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isTesting && !isHealing && linksText.isNotBlank()
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            enabled = !isTesting && !isHealing && linksText.isNotBlank(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF))
         ) {
             if (isTesting) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
                 Spacer(Modifier.width(8.dp))
                 Text(progressText)
             } else {
-                Text("شروع تست گروهی")
+                Text("شروع تست گروهی", fontWeight = FontWeight.Bold)
             }
         }
 
@@ -161,16 +176,19 @@ fun BatchScreen(
             val healthyCount = results.count { it.second?.overallStatus == OverallStatus.HEALTHY }
             val deadCount = results.count { it.second?.overallStatus == OverallStatus.IP_DEAD || it.second?.overallStatus == OverallStatus.UNKNOWN }
 
-            Text("خلاصه نتایج: سالم $healthyCount | خراب $deadCount | کل ${results.size}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text("خلاصه نتایج: سالم $healthyCount | خراب $deadCount | کل ${results.size}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textColor)
             Spacer(Modifier.height(8.dp))
 
             results.forEach { (link, result) ->
-                Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.White)
+                ) {
                     Column(modifier = Modifier.padding(8.dp)) {
-                        Text(link, fontSize = 12.sp, maxLines = 1)
+                        Text(link, fontSize = 12.sp, maxLines = 1, color = textColor)
                         if (result != null) {
-                            Text("وضعیت: ${result.overallStatus}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text("Real Delay: ${result.realDelayMs ?: "-"} ms", fontSize = 12.sp)
+                            Text("وضعیت: ${result.overallStatus}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textColor)
+                            Text("Real Delay: ${result.realDelayMs ?: "-"} ms", fontSize = 12.sp, color = subTextColor)
                         } else {
                             Text("خطا در پارس یا تشخیص", color = Color.Red, fontSize = 12.sp)
                         }
@@ -182,11 +200,11 @@ fun BatchScreen(
 
             Button(
                 onClick = { showHealModeDialog = true },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(50.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
                 enabled = !isTesting && !isHealing
             ) {
-                Text("ترمیم گروهی کانفیگ‌های خراب")
+                Text("ترمیم گروهی کانفیگ‌های خراب", fontWeight = FontWeight.Bold)
             }
 
             Spacer(Modifier.height(8.dp))
@@ -200,11 +218,12 @@ fun BatchScreen(
                     clipboard.setPrimaryClip(ClipData.newPlainText("batch_links", allLinks))
                     Toast.makeText(context, "همه لینک‌ها کپی شدند", Toast.LENGTH_SHORT).show()
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6C63FF))
             ) {
-                Icon(Icons.Rounded.ContentCopy, contentDescription = null)
+                Icon(Icons.Rounded.ContentCopy, contentDescription = null, tint = Color(0xFF6C63FF))
                 Spacer(Modifier.width(8.dp))
-                Text("کپی همه لینک‌ها")
+                Text("کپی همه لینک‌ها", color = Color(0xFF6C63FF))
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -220,11 +239,12 @@ fun BatchScreen(
                     }
                     context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری"))
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6C63FF))
             ) {
-                Icon(Icons.Rounded.Share, contentDescription = null)
+                Icon(Icons.Rounded.Share, contentDescription = null, tint = Color(0xFF6C63FF))
                 Spacer(Modifier.width(8.dp))
-                Text("اشتراک‌گذاری همه لینک‌ها")
+                Text("اشتراک‌گذاری همه لینک‌ها", color = Color(0xFF6C63FF))
             }
         }
     }
@@ -232,19 +252,19 @@ fun BatchScreen(
     if (showHealModeDialog) {
         AlertDialog(
             onDismissRequest = { showHealModeDialog = false },
-            title = { Text("حالت ترمیم گروهی") },
-            text = { Text("حالت کامل دقیق‌تره ولی طولانی‌تره.") },
+            title = { Text("حالت ترمیم گروهی", color = textColor) },
+            text = { Text("حالت کامل دقیق‌تره ولی طولانی‌تره.", color = textColor) },
             confirmButton = {
                 TextButton(onClick = {
                     showHealModeDialog = false
                     performHealGroup(activity, results, Diagnostician.HealMode.DEEP, scope, historyDao) { newResults -> results = newResults; isHealing = false }
-                }) { Text("کامل") }
+                }) { Text("کامل", color = Color(0xFF6C63FF)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showHealModeDialog = false
                     performHealGroup(activity, results, Diagnostician.HealMode.QUICK, scope, historyDao) { newResults -> results = newResults; isHealing = false }
-                }) { Text("سریع") }
+                }) { Text("سریع", color = Color(0xFF6C63FF)) }
             }
         )
     }
