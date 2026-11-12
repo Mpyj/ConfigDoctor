@@ -78,6 +78,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
     var isLoading by remember { mutableStateOf(false) }
     var isHealing by remember { mutableStateOf(false) }
     var healingProgress by remember { mutableStateOf("") }
+    var showHealDialog by remember { mutableStateOf(false) }
     
     val scope = rememberCoroutineScope()
     val context = activity.applicationContext
@@ -317,22 +318,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                             if (res.overallStatus == OverallStatus.IP_DEAD || res.overallStatus == OverallStatus.UNKNOWN) {
                                 Button(
                                     onClick = {
-                                        isHealing = true
-                                        healingProgress = "شروع ترمیم..."
-                                        scope.launch {
-                                            val healedConfig = Diagnostician.healConfig(activity, res.config) { progress ->
-                                                scope.launch(Dispatchers.Main) {
-                                                    healingProgress = progress
-                                                }
-                                            }
-                                            if (healedConfig != null) {
-                                                healedLink = VlessParser.buildLink(healedConfig)
-                                            } else {
-                                                errorText = "❌ متاسفانه مسیر سالمی پیدا نشد."
-                                            }
-                                            isHealing = false
-                                            healingProgress = ""
-                                        }
+                                        showHealDialog = true
                                     },
                                     modifier = Modifier.weight(1f).height(50.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
@@ -369,7 +355,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                                             color = MaterialTheme.colorScheme.primary,
                                             strokeWidth = 2.dp
                                         )
-                                        Spacer(Modifier.width(12.dp))
+                                        Spacer(modifier = Modifier.width(12.dp))
                                         Text(
                                             text = "در حال ترمیم...",
                                             fontWeight = FontWeight.Bold,
@@ -442,6 +428,83 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                 Spacer(modifier = Modifier.height(30.dp))
             }
         }
+
+        // دیالوگ انتخاب حالت ترمیم
+        if (showHealDialog && diagnosisResult != null) {
+            AlertDialog(
+                onDismissRequest = { showHealDialog = false },
+                title = { Text("انتخاب حالت ترمیم", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text("چطور کانفیگ رو ترمیم کنیم؟", fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "• حالت سریع: فقط ۲-۳ ثانیه طول می‌کشه (تست TCP).",
+                            fontSize = 13.sp,
+                            color = Color.Gray
+                        )
+                        Text(
+                            "• حالت کامل: دقیق‌ترین نتیجه رو می‌ده ولی ممکنه تا ۳۰ ثانیه طول بکشه (تست Real Delay).",
+                            fontSize = 13.sp,
+                            color = Color.Gray
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showHealDialog = false
+                            isHealing = true
+                            healingProgress = "شروع ترمیم (حالت کامل)..."
+                            scope.launch {
+                                val res = diagnosisResult!!
+                                val healedConfig = Diagnostician.healConfig(
+                                    activity, res.config, Diagnostician.HealMode.DEEP
+                                ) { progress ->
+                                    scope.launch(Dispatchers.Main) { healingProgress = progress }
+                                }
+                                if (healedConfig != null) {
+                                    healedLink = VlessParser.buildLink(healedConfig)
+                                } else {
+                                    errorText = "❌ متاسفانه مسیر سالمی پیدا نشد."
+                                }
+                                isHealing = false
+                                healingProgress = ""
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                    ) {
+                        Text("ترمیم کامل (بهترین)")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = {
+                            showHealDialog = false
+                            isHealing = true
+                            healingProgress = "شروع ترمیم (حالت سریع)..."
+                            scope.launch {
+                                val res = diagnosisResult!!
+                                val healedConfig = Diagnostician.healConfig(
+                                    activity, res.config, Diagnostician.HealMode.QUICK
+                                ) { progress ->
+                                    scope.launch(Dispatchers.Main) { healingProgress = progress }
+                                }
+                                if (healedConfig != null) {
+                                    healedLink = VlessParser.buildLink(healedConfig)
+                                } else {
+                                    errorText = "❌ متاسفانه مسیر سالمی پیدا نشد."
+                                }
+                                isHealing = false
+                                healingProgress = ""
+                            }
+                        }
+                    ) {
+                        Text("ترمیم سریع")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -473,7 +536,7 @@ fun StatusCard(status: OverallStatus, summary: String) {
             ) {
                 Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(32.dp))
             }
-            Spacer(Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = color)
                 Spacer(modifier = Modifier.height(6.dp))

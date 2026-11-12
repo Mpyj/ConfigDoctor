@@ -30,13 +30,17 @@ data class DiagnosisResult(
     val summary: String
 )
 
-// یک کلاس داخلی برای نگه‌داری کاندیدای ترمیم و تاخیرش
 private data class HealCandidate(
     val config: VlessConfig,
     val realDelayMs: Long
 )
 
 object Diagnostician {
+
+    enum class HealMode {
+        QUICK,  // فقط TCP
+        DEEP    // TCP + Real Delay
+    }
 
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
         val (serverType, resolvedIp) = ServerTypeDetector.detect(config.address)
@@ -106,13 +110,10 @@ object Diagnostician {
         )
     }
 
-    /**
-     * ترمیم کانفیگ: اسکن سه‌مرحله‌ای با تولید IPهای تصادفی از رنج‌های رسمی کلادفلر
-     * @param onProgress یک callback برای گزارش وضعیت به UI
-     */
     suspend fun healConfig(
         context: Context, 
         config: VlessConfig,
+        mode: HealMode = HealMode.DEEP,
         onProgress: (String) -> Unit = {}
     ): VlessConfig? = withContext(Dispatchers.IO) {
         val baseConfig = if (config.port <= 0) config.copy(port = 443) else config
@@ -127,12 +128,15 @@ object Diagnostician {
         onProgress("مرحله ۱: غربالگری ${allCandidates.size} IP...")
         val tcpPassed = mutableListOf<String>()
         for ((index, ip) in allCandidates.withIndex()) {
-            // هر ۱۰ تا یه بار پیشرفت رو آپدیت کن (برای اینکه UI کند نشه)
             if (index % 10 == 0) {
                 onProgress("مرحله ۱: تست ${index + 1} از ${allCandidates.size}")
             }
             if (TcpTester.test(ip, baseConfig.port, timeoutMs = 1000).ok) {
                 tcpPassed.add(ip)
+                if (mode == HealMode.QUICK) {
+                    onProgress("حالت سریع: اولین IP سالم پیدا شد.")
+                    return@withContext baseConfig.copy(address = ip)
+                }
             }
         }
         
