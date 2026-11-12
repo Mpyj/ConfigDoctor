@@ -15,8 +15,8 @@ import java.net.URL
 object XrayRealDelayTester {
 
     private const val TEST_URL = "http://www.gstatic.com/generate_204"
-    private const val IP_API_URL = "https://api.ip.sb/geoip"
-    private const val SOCKS_PORT = 10808
+    private const val CLOUDFLARE_TRACE_URL = "https://www.cloudflare.com/cdn-cgi/trace"
+    private const val IPIFY_URL = "https://api.ipify.org?format=json"
     private const val HTTP_PORT = 10809
 
     suspend fun test(
@@ -41,11 +41,8 @@ object XrayRealDelayTester {
                 )
             }
 
-            // ۲. صبر می‌کنیم تا تونل بالا بیاد
-            Thread.sleep(1500)
-
-            // ۳. گرفتن IP و کشور از طریق HTTP Proxy
-            val (ip, country) = fetchIpAndCountryViaHttpProxy()
+            // ۲. گرفتن IP و کشور از طریق تونل موقت
+            val (ip, country) = fetchIpAndCountry(config)
 
             RealDelayResult(
                 ok = true,
@@ -62,26 +59,102 @@ object XrayRealDelayTester {
         }
     }
 
-    private fun fetchIpAndCountryViaHttpProxy(): Pair<String?, String?> {
+    /**
+     * باز کردن تونل موقت، گرفتن IP و کشور با چند منبع، و بستن تونل
+     */
+    private fun fetchIpAndCountry(config: VlessConfig): Pair<String?, String?> {
+        val xrayJson = buildXrayConfigJson(config) ?: return null to null
+        val tunnelName = "ip_fetch_${System.currentTimeMillis()}"
+        
+        return try {
+            // ۱. باز کردن تونل موقت
+            Libv2ray.initXray(tunnelName, xrayJson, null)
+            
+            // ۲. صبر برای بالا اومدن تونل
+            Thread.sleep(1000)
+            
+            // ۳. اول سراغ Cloudflare Trace میریم
+            var result = fetchFromCloudflareTrace()
+            
+            // ۴. اگه کلادفلر جواب نداد، برو سراغ Ipify
+            if (result.first == null) {
+                result = fetchFromIpify()
+            }
+            
+            // ۵. بستن تونل
+            Libv2ray.stopXray(tunnelName)
+            result
+        } catch (e: Exception) {
+            try { Libv2ray.stopXray(tunnelName) } catch (_: Exception) {}
+            null to null
+        }
+    }
+
+    /**
+     * منبع اول: Cloudflare Trace (هم IP و هم کشور)
+     */
+    private fun fetchFromCloudflareTrace(): Pair<String?, String?> {
         return try {
             val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", HTTP_PORT))
-            val url = URL(IP_API_URL)
+            val url = URL(CLOUDFLARE_TRACE_URL)
             val conn = url.openConnection(proxy) as HttpURLConnection
             conn.connectTimeout = 5000
             conn.readTimeout = 5000
             conn.requestMethod = "GET"
 
-            if (conn.responseCode != 200) {
-                return null to null
+            if (conn.responseCode != 200) return null to null
+
+            val body = conn.inputStream.bufferedReader().readText()
+            var ip: String? = null
+            var country: String? = null
+            body.lines().forEach { line ->
+                if (line.startsWith("ip=")) ip = line.removePrefix("ip=").trim()
+                if (line.startsWith("loc=")) country = line.removePrefix("loc=").trim()
             }
+            ip to country
+        } catch (e: Exception) {
+            null to null
+        }
+    }
+
+    /**
+     * منبع دوم: Ipify (فقط IP) + یه API دیگه برای کشور
+     */
+    private fun fetchFromIpify(): Pair<String?, String?> {
+        return try {
+            val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", HTTP_PORT))
+            val url = URL(IPIFY_URL)
+            val conn = url.openConnection(proxy) as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+
+            if (conn.responseCode != 200) return null to null
 
             val body = conn.inputStream.bufferedReader().readText()
             val json = JSONObject(body)
             val ip = json.optString("ip", null)
-            val country = json.optString("country_code", null)
+            
+            // برای کشور، از ip-api استفاده می‌کنیم
+            val country = if (ip != null) fetchCountryFromIpApi(ip) else null
             ip to country
         } catch (e: Exception) {
             null to null
+        }
+    }
+
+    private fun fetchCountryFromIpApi(ip: String): String? {
+        return try {
+            val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", HTTP_PORT))
+            val url = URL("http://ip-api.com/json/$ip?fields=countryCode")
+            val conn = url.openConnection(proxy) as HttpURLConnection
+            conn.connectTimeout = 5000
+            conn.readTimeout = 5000
+
+            if (conn.responseCode != 200) return null
+            val body = conn.inputStream.bufferedReader().readText()
+            JSONObject(body).optString("countryCode", null)
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -92,10 +165,9 @@ object XrayRealDelayTester {
             // Inbounds (SOCKS + HTTP)
             val inbounds = JSONArray()
 
-            // SOCKS Inbound
             val socksInbound = JSONObject()
             socksInbound.put("tag", "socks")
-            socksInbound.put("port", SOCKS_PORT)
+            socksInbound.put("port", 10808)
             socksInbound.put("listen", "127.0.0.1")
             socksInbound.put("protocol", "socks")
             val socksSettings = JSONObject()
@@ -104,7 +176,6 @@ object XrayRealDelayTester {
             socksInbound.put("settings", socksSettings)
             inbounds.put(socksInbound)
 
-            // HTTP Inbound (برای گرفتن IP و کشور)
             val httpInbound = JSONObject()
             httpInbound.put("tag", "http")
             httpInbound.put("port", HTTP_PORT)
