@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # مجوز لازم برای ساخت Release
+      contents: write
 
     steps:
       - name: Checkout
@@ -31,31 +31,85 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      # بیلد دیباگ (برای تست خودت)
       - name: Build Debug APKs
         run: gradle assembleDebug
 
-      # بیلد ریلیز (برای انتشار)
       - name: Build Release APKs
         run: gradle assembleRelease
 
-      # آپلود آرتیفکت‌های دیباگ (همه معماری‌ها)
-      - name: Upload Debug APKs
+      # --- آپلود جداگانه‌ی هر APK دیباگ ---
+      - name: Upload Debug APK (arm64-v8a)
         uses: actions/upload-artifact@v7
         with:
-          name: config-doctor-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: debug-arm64-v8a
+          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
           archive: false
 
-      # آپلود آرتیفکت‌های ریلیز (همه معماری‌ها)
-      - name: Upload Release APKs
+      - name: Upload Debug APK (armeabi-v7a)
         uses: actions/upload-artifact@v7
         with:
-          name: config-doctor-release
-          path: app/build/outputs/apk/release/*.apk
+          name: debug-armeabi-v7a
+          path: app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
           archive: false
 
-      # انتشار خودکار در Releases
+      - name: Upload Debug APK (x86)
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-x86
+          path: app/build/outputs/apk/debug/app-x86-debug.apk
+          archive: false
+
+      - name: Upload Debug APK (x86_64)
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-x86_64
+          path: app/build/outputs/apk/debug/app-x86_64-debug.apk
+          archive: false
+
+      - name: Upload Debug APK (Universal)
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-universal
+          path: app/build/outputs/apk/debug/app-universal-debug.apk
+          archive: false
+
+      # --- آپلود جداگانه‌ی هر APK ریلیز ---
+      - name: Upload Release APK (arm64-v8a)
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-arm64-v8a
+          path: app/build/outputs/apk/release/app-arm64-v8a-release.apk
+          archive: false
+
+      - name: Upload Release APK (armeabi-v7a)
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-armeabi-v7a
+          path: app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+          archive: false
+
+      - name: Upload Release APK (x86)
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-x86
+          path: app/build/outputs/apk/release/app-x86-release.apk
+          archive: false
+
+      - name: Upload Release APK (x86_64)
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-x86_64
+          path: app/build/outputs/apk/release/app-x86_64-release.apk
+          archive: false
+
+      - name: Upload Release APK (Universal)
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-universal
+          path: app/build/outputs/apk/release/app-universal-release.apk
+          archive: false
+
+      # --- انتشار در Releases (همه‌ی فایل‌ها یک‌جا) ---
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
