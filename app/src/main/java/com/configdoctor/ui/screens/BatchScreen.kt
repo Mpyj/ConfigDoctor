@@ -42,6 +42,7 @@ fun BatchTab(
     val db = remember { AppDatabase.getDatabase(context) }
     val historyDao = db.historyDao()
 
+    var subUrl by remember { mutableStateOf("") }
     var linksText by remember { mutableStateOf("") }
     var isTesting by remember { mutableStateOf(false) }
     var isHealing by remember { mutableStateOf(false) }
@@ -53,12 +54,13 @@ fun BatchTab(
     val textColor = if (isDarkTheme) Color.White else Color.Black
     val subTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
 
-    val fetchSubscription: (String) -> Unit = { url ->
+    // تابع دریافت ساب (اصلاح‌شده)
+    val fetchSubscription: () -> Unit = {
         isFetchingSub = true
         scope.launch {
             val content = withContext(Dispatchers.IO) {
                 try {
-                    URL(url).readText()
+                    URL(subUrl).readText()
                 } catch (e: Exception) {
                     null
                 }
@@ -94,7 +96,6 @@ fun BatchTab(
     ) {
         Spacer(Modifier.height(8.dp))
 
-        var subUrl by remember { mutableStateOf("") }
         OutlinedTextField(
             value = subUrl,
             onValueChange = { subUrl = it },
@@ -108,7 +109,7 @@ fun BatchTab(
                 unfocusedTextColor = textColor
             ),
             trailingIcon = {
-                IconButton(onClick = { if (subUrl.isNotBlank()) fetchSubscription(subUrl) }) {
+                IconButton(onClick = { if (subUrl.isNotBlank()) fetchSubscription() }) {
                     Icon(Icons.Rounded.Download, contentDescription = "دریافت ساب", tint = Color(0xFF6C63FF))
                 }
             }
@@ -139,26 +140,54 @@ fun BatchTab(
 
         Spacer(Modifier.height(16.dp))
 
+        // دکمه شروع تست (اگر ساب پر بود، اول ساب رو دانلود میکنه)
         Button(
             onClick = {
-                isTesting = true
-                val links = linksText.lines().filter { it.isNotBlank() }
-                scope.launch {
-                    results = Diagnostician.diagnoseBatch(activity, links) { progress ->
-                        progressText = progress
+                if (subUrl.isNotBlank() && linksText.isBlank()) {
+                    // کاربر فقط ساب رو پر کرده، اول ساب رو دانلود کن
+                    isFetchingSub = true
+                    scope.launch {
+                        val content = withContext(Dispatchers.IO) {
+                            try { URL(subUrl).readText() } catch (e: Exception) { null }
+                        }
+                        if (content != null) {
+                            val decoded = try { String(android.util.Base64.decode(content, android.util.Base64.DEFAULT)) } catch (e: Exception) { content }
+                            val configLines = decoded.lines().filter { it.startsWith("vless://") || it.startsWith("vmess://") || it.startsWith("trojan://") }
+                            if (configLines.isNotEmpty()) {
+                                linksText = configLines.joinToString("\n")
+                                Toast.makeText(context, "${configLines.size} کانفیگ دریافت شد. شروع تست...", Toast.LENGTH_SHORT).show()
+                                // حالا شروع به تست کن
+                                isTesting = true
+                                results = Diagnostician.diagnoseBatch(activity, configLines) { p -> progressText = p }
+                                isTesting = false
+                                progressText = ""
+                            } else {
+                                Toast.makeText(context, "هیچ کانفیگی توی ساب پیدا نشد", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "خطا در دریافت ساب", Toast.LENGTH_SHORT).show()
+                        }
+                        isFetchingSub = false
                     }
-                    isTesting = false
-                    progressText = ""
+                } else if (linksText.isNotBlank()) {
+                    // کاربر لینک‌ها رو دستی وارد کرده
+                    isTesting = true
+                    val links = linksText.lines().filter { it.isNotBlank() }
+                    scope.launch {
+                        results = Diagnostician.diagnoseBatch(activity, links) { p -> progressText = p }
+                        isTesting = false
+                        progressText = ""
+                    }
                 }
             },
             modifier = Modifier.fillMaxWidth().height(50.dp),
-            enabled = !isTesting && !isHealing && linksText.isNotBlank(),
+            enabled = !isTesting && !isHealing && !isFetchingSub && (linksText.isNotBlank() || subUrl.isNotBlank()),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF))
         ) {
-            if (isTesting) {
+            if (isTesting || isFetchingSub) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
                 Spacer(Modifier.width(8.dp))
-                Text(progressText)
+                Text(if (isFetchingSub) "دریافت ساب..." else progressText)
             } else {
                 Text("شروع تست گروهی", fontWeight = FontWeight.Bold)
             }
