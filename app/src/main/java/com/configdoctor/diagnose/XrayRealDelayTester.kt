@@ -4,6 +4,8 @@ import android.content.Context
 import com.configdoctor.model.VlessConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import libv2ray.CoreCallbackHandler
+import libv2ray.CoreController
 import libv2ray.Libv2ray
 import org.json.JSONArray
 import org.json.JSONObject
@@ -60,15 +62,23 @@ object XrayRealDelayTester {
     }
 
     /**
-     * باز کردن تونل موقت، گرفتن IP و کشور با چند منبع، و بستن تونل
+     * باز کردن تونل موقت با CoreController، گرفتن IP و کشور، و بستن تونل
      */
     private fun fetchIpAndCountry(config: VlessConfig): Pair<String?, String?> {
         val xrayJson = buildXrayConfigJson(config) ?: return null to null
-        val tunnelName = "ip_fetch_${System.currentTimeMillis()}"
+        
+        // ساخت یه CoreController با یه callback ساده
+        val callback = object : CoreCallbackHandler {
+            override fun startup(): Int = 0
+            override fun shutdown(): Int = 0
+            override fun onEmitStatus(code: Int, msg: String?): Int = 0
+        }
+        
+        val controller = CoreController(callback)
         
         return try {
             // ۱. باز کردن تونل موقت
-            Libv2ray.initXray(tunnelName, xrayJson, null)
+            controller.startLoop(xrayJson, 0) // 0 یعنی TUN استفاده نشه (فقط پروکسی)
             
             // ۲. صبر برای بالا اومدن تونل
             Thread.sleep(1000)
@@ -82,10 +92,10 @@ object XrayRealDelayTester {
             }
             
             // ۵. بستن تونل
-            Libv2ray.stopXray(tunnelName)
+            controller.stopLoop()
             result
         } catch (e: Exception) {
-            try { Libv2ray.stopXray(tunnelName) } catch (_: Exception) {}
+            try { controller.stopLoop() } catch (_: Exception) {}
             null to null
         }
     }
@@ -134,7 +144,6 @@ object XrayRealDelayTester {
             val json = JSONObject(body)
             val ip = json.optString("ip", null)
             
-            // برای کشور، از ip-api استفاده می‌کنیم
             val country = if (ip != null) fetchCountryFromIpApi(ip) else null
             ip to country
         } catch (e: Exception) {
