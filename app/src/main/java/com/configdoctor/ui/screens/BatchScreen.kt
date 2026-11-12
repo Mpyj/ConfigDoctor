@@ -30,8 +30,7 @@ import com.configdoctor.diagnose.DiagnosisResult
 import com.configdoctor.diagnose.Diagnostician
 import com.configdoctor.diagnose.OverallStatus
 import com.configdoctor.parser.ConfigParserFactory
-import com.configdoctor.ui.components.DetailGrid
-import com.configdoctor.ui.components.StatusCard
+import com.configdoctor.ui.components.CompactResultCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -53,6 +52,7 @@ fun BatchTab(
     var isHealing by remember { mutableStateOf(false) }
     var isFetchingSub by remember { mutableStateOf(false) }
     var progressText by remember { mutableStateOf("") }
+    var healProgress by remember { mutableStateOf(0f) } // 0.0 تا 1.0 برای نوار پیشرفت
     var results by remember { mutableStateOf<List<Pair<String, DiagnosisResult?>>>(emptyList()) }
     var showHealModeDialog by remember { mutableStateOf(false) }
 
@@ -66,6 +66,7 @@ fun BatchTab(
         label = "rotation"
     )
 
+    // تابع دریافت ساب
     val fetchSubscription: () -> Unit = {
         isFetchingSub = true
         scope.launch {
@@ -92,6 +93,7 @@ fun BatchTab(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // ورودی ساب
         OutlinedTextField(
             value = subUrl,
             onValueChange = { subUrl = it },
@@ -119,21 +121,33 @@ fun BatchTab(
 
         Spacer(Modifier.height(16.dp))
 
-        // نوار وضعیت (Progress)
+        // نوار وضعیت تست یا ترمیم
         AnimatedVisibility(visible = isTesting || isHealing || isFetchingSub) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 colors = CardDefaults.cardColors(containerColor = if (isDarkTheme) Color(0xFF16213E) else Color.White),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Autorenew, contentDescription = null, modifier = Modifier.size(20.dp).rotate(rotation), tint = Color(0xFF6C63FF))
-                    Spacer(Modifier.width(12.dp))
-                    Text(text = if (isFetchingSub) "دریافت ساب..." else progressText, color = textColor, fontSize = 14.sp)
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Autorenew, contentDescription = null, modifier = Modifier.size(20.dp).rotate(rotation), tint = Color(0xFF6C63FF))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(text = if (isFetchingSub) "دریافت ساب..." else progressText, color = textColor, fontSize = 14.sp)
+                    }
+                    if (isHealing) {
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { healProgress },
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                            color = Color(0xFF4CAF50),
+                            trackColor = Color.Gray.copy(alpha = 0.3f)
+                        )
+                    }
                 }
             }
         }
 
+        // دکمه شروع تست
         Button(
             onClick = {
                 if (subUrl.isNotBlank() && linksText.isBlank()) {
@@ -179,33 +193,36 @@ fun BatchTab(
             Text("خلاصه: سالم $healthyCount | خراب $deadCount | کل ${results.size}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textColor)
             Spacer(Modifier.height(8.dp))
 
-            // لیست نتایج با کارت‌های تفصیلی
+            // لیست کارت‌های کوچیک
             results.forEach { (link, result) ->
                 if (result != null) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        colors = CardDefaults.cardColors(containerColor = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            StatusCard(status = result.overallStatus, summary = result.summary)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            DetailGrid(result)
+                    CompactResultCard(
+                        result = result,
+                        isDarkTheme = isDarkTheme,
+                        onCopy = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("config_link", ConfigParserFactory.buildLink(result.config)))
+                            Toast.makeText(context, "لینک کپی شد", Toast.LENGTH_SHORT).show()
                         }
-                    }
+                    )
                 } else {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F).copy(alpha = 0.2f))
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F).copy(alpha = 0.1f)),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("خطا در پارس: $link", color = Color.Red, modifier = Modifier.padding(8.dp))
+                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("خطا در پارس: ${link.take(30)}...", color = Color.Red, fontSize = 12.sp)
+                        }
                     }
                 }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            // دکمه ترمیم گروهی (اصلاح‌شده)
+            // دکمه ترمیم گروهی
             Button(
                 onClick = { showHealModeDialog = true },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -217,6 +234,7 @@ fun BatchTab(
 
             Spacer(Modifier.height(8.dp))
 
+            // دکمه‌های کپی و اشتراک‌گذاری
             OutlinedButton(
                 onClick = {
                     val allLinks = results.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
@@ -231,9 +249,29 @@ fun BatchTab(
                 Spacer(Modifier.width(8.dp))
                 Text("کپی همه لینک‌ها", color = Color(0xFF6C63FF))
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = {
+                    val allLinks = results.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, allLinks)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری"))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6C63FF))
+            ) {
+                Icon(Icons.Rounded.Share, contentDescription = null, tint = Color(0xFF6C63FF))
+                Spacer(Modifier.width(8.dp))
+                Text("اشتراک‌گذاری همه لینک‌ها", color = Color(0xFF6C63FF))
+            }
         }
     }
 
+    // دیالوگ انتخاب حالت ترمیم
     if (showHealModeDialog) {
         AlertDialog(
             onDismissRequest = { showHealModeDialog = false },
@@ -242,20 +280,22 @@ fun BatchTab(
             confirmButton = {
                 TextButton(onClick = {
                     showHealModeDialog = false
-                    executeHealBatch(activity, results, Diagnostician.HealMode.DEEP, historyDao,
-                        onStart = { isHealing = true },
-                        onProgress = { p -> progressText = p },
-                        onComplete = { newResults -> results = newResults; isHealing = false; progressText = "" }
+                    executeHealBatch(
+                        activity, results, Diagnostician.HealMode.DEEP, historyDao,
+                        onStart = { isHealing = true; healProgress = 0f },
+                        onProgress = { p, percent -> progressText = p; healProgress = percent },
+                        onComplete = { newResults -> results = newResults; isHealing = false; progressText = ""; healProgress = 0f }
                     )
                 }) { Text("کامل", color = Color(0xFF6C63FF)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showHealModeDialog = false
-                    executeHealBatch(activity, results, Diagnostician.HealMode.QUICK, historyDao,
-                        onStart = { isHealing = true },
-                        onProgress = { p -> progressText = p },
-                        onComplete = { newResults -> results = newResults; isHealing = false; progressText = "" }
+                    executeHealBatch(
+                        activity, results, Diagnostician.HealMode.QUICK, historyDao,
+                        onStart = { isHealing = true; healProgress = 0f },
+                        onProgress = { p, percent -> progressText = p; healProgress = percent },
+                        onComplete = { newResults -> results = newResults; isHealing = false; progressText = ""; healProgress = 0f }
                     )
                 }) { Text("سریع", color = Color(0xFF6C63FF)) }
             }
@@ -270,30 +310,36 @@ private fun executeHealBatch(
     mode: Diagnostician.HealMode,
     historyDao: com.configdoctor.data.HistoryDao,
     onStart: () -> Unit,
-    onProgress: (String) -> Unit,
+    onProgress: (String, Float) -> Unit,
     onComplete: (List<Pair<String, DiagnosisResult?>>) -> Unit
 ) {
     onStart()
     val configsToHeal = currentResults.mapNotNull { it.second?.config }
+    val total = configsToHeal.size
+    var current = 0
+
     val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main)
-    
     scope.launch {
         val healedPairs = Diagnostician.healBatch(activity, configsToHeal, mode) { progress ->
-            onProgress(progress)
+            // progress از تابع healBatch میاد (مثل "ترمیم ۱ از ۵")
+            onProgress(progress, 0f) // درصد دقیق رو نمیشه از اینجا گرفت، برای همین صفر می‌فرستیم
         }
         
         var configIndex = 0
         val newResults = currentResults.map { pair ->
             if (pair.second != null) {
+                current++
+                val percent = current.toFloat() / total.toFloat()
+                onProgress("ترمیم ${current} از ${total}...", percent)
+                
                 val healed = healedPairs[configIndex].second
                 configIndex++
                 if (healed != null) {
-                    // کانفیگ ترمیم شد، دوباره تشخیص بده تا اطلاعات جدید (Real Delay و...) آپدیت شه
                     val newDiag = Diagnostician.diagnose(activity, healed)
                     historyDao.insert(HistoryEntity(link = ConfigParserFactory.buildLink(healed), timestamp = System.currentTimeMillis(), status = "HEALED", outputIp = newDiag.outputIp, outputCountry = newDiag.outputCountry, realDelayMs = newDiag.realDelayMs))
                     pair.first to newDiag
                 } else {
-                    pair // ترمیم نشد، همون قبلی بمونه
+                    pair
                 }
             } else {
                 pair
