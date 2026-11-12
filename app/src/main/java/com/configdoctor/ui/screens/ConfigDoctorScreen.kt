@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,7 +41,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConfigDoctorScreen(activity: MainActivity) {
+fun ConfigDoctorScreen(
+    activity: MainActivity,
+    isDarkTheme: Boolean,
+    onToggleTheme: () -> Unit
+) {
     var link by remember { mutableStateOf("") }
     var diagnosisResult by remember { mutableStateOf<DiagnosisResult?>(null) }
     var healedLink by remember { mutableStateOf<String?>(null) }
@@ -50,12 +55,12 @@ fun ConfigDoctorScreen(activity: MainActivity) {
     var healingProgress by remember { mutableStateOf("") }
     var showHealDialog by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var showBatchScreen by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val context = activity.applicationContext
     val scrollState = rememberScrollState()
 
-    // دیتابیس
     val db = remember { AppDatabase.getDatabase(context) }
     val historyDao = db.historyDao()
     val historyList by historyDao.getAll().collectAsState(initial = emptyList())
@@ -71,17 +76,21 @@ fun ConfigDoctorScreen(activity: MainActivity) {
         label = "rotation"
     )
 
-    // پس‌زمینه گرادیانت
+    if (showBatchScreen) {
+        BatchScreen(activity = activity, onBack = { showBatchScreen = false })
+        return
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF1A1A2E),
-                        Color(0xFF16213E),
-                        Color(0xFF0F3460)
-                    )
+                    colors = if (isDarkTheme) {
+                        listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460))
+                    } else {
+                        listOf(Color(0xFFF8F9FA), Color(0xFFE0E0E0), Color(0xFFD1D1D1))
+                    }
                 )
             )
     ) {
@@ -94,34 +103,47 @@ fun ConfigDoctorScreen(activity: MainActivity) {
         ) {
             Spacer(modifier = Modifier.height(32.dp))
 
-            // هدر خوشگل
-            Icon(
-                Icons.Rounded.HealthAndSafety,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = Color(0xFF6C63FF)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Rounded.HealthAndSafety,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = Color(0xFF6C63FF)
+                )
+                IconButton(onClick = onToggleTheme) {
+                    Icon(
+                        if (isDarkTheme) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
+                        contentDescription = "تغییر تم",
+                        tint = if (isDarkTheme) Color.White else Color.Black
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 "دستیار هوشمند کانفیگ",
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = if (isDarkTheme) Color.White else Color.Black
             )
             Text(
                 "تشخیص و ترمیم خودکار کانفیگ‌های VLESS",
                 fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.6f)
+                color = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
             )
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // کارت ورودی (شیشه‌ای)
+            // کارت ورودی
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
                 colors = CardDefaults.elevatedCardColors(
-                    containerColor = Color.White.copy(alpha = 0.1f)
+                    containerColor = if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.White
                 ),
                 elevation = CardDefaults.elevatedCardElevation(defaultElevation = 8.dp)
             ) {
@@ -129,22 +151,22 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                     Text(
                         "لینک کانفیگ",
                         fontSize = 14.sp,
-                        color = Color.White.copy(alpha = 0.8f),
+                        color = if (isDarkTheme) Color.White.copy(alpha = 0.8f) else Color.Black,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedTextField(
                         value = link,
                         onValueChange = { link = it },
-                        placeholder = { Text("vless://...", color = Color.White.copy(alpha = 0.4f)) },
+                        placeholder = { Text("vless://...", color = if (isDarkTheme) Color.White.copy(alpha = 0.4f) else Color.Gray) },
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Color(0xFF6C63FF),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
+                            unfocusedBorderColor = if (isDarkTheme) Color.White.copy(alpha = 0.2f) else Color.LightGray,
+                            focusedTextColor = if (isDarkTheme) Color.White else Color.Black,
+                            unfocusedTextColor = if (isDarkTheme) Color.White else Color.Black,
                             cursorColor = Color(0xFF6C63FF)
                         )
                     )
@@ -190,9 +212,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                         isLoading = false
                     }
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp),
+                modifier = Modifier.fillMaxWidth().height(60.dp),
                 enabled = !isLoading && !isHealing && link.isNotBlank(),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -202,36 +222,43 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
             ) {
                 if (isLoading) {
-                    Icon(
-                        Icons.Rounded.Autorenew,
-                        contentDescription = null,
-                        modifier = Modifier.size(26.dp).rotate(rotation)
-                    )
+                    Icon(Icons.Rounded.Autorenew, contentDescription = null, modifier = Modifier.size(26.dp).rotate(rotation))
                     Spacer(Modifier.width(12.dp))
                 } else {
                     Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(8.dp))
                 }
-                Text(
-                    if (isLoading) "در حال بررسی..." else "شروع تشخیص",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Text(if (isLoading) "در حال بررسی..." else "شروع تشخیص", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
 
-            // دکمه تاریخچه
-            OutlinedButton(
-                onClick = { showHistory = !showHistory },
+            // دکمه‌های تاریخچه و تست گروهی
+            Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Rounded.History, contentDescription = null, tint = Color.White)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(if (showHistory) "بستن تاریخچه" else "نمایش تاریخچه", color = Color.White)
+                OutlinedButton(
+                    onClick = { showHistory = !showHistory },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isDarkTheme) Color.White.copy(alpha = 0.3f) else Color.Gray)
+                ) {
+                    Icon(Icons.Rounded.History, contentDescription = null, tint = if (isDarkTheme) Color.White else Color.Black)
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (showHistory) "بستن" else "تاریخچه", color = if (isDarkTheme) Color.White else Color.Black)
+                }
+
+                OutlinedButton(
+                    onClick = { showBatchScreen = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isDarkTheme) Color.White.copy(alpha = 0.3f) else Color.Gray)
+                ) {
+                    Icon(Icons.Rounded.List, contentDescription = null, tint = if (isDarkTheme) Color.White else Color.Black)
+                    Spacer(Modifier.width(4.dp))
+                    Text("تست گروهی", color = if (isDarkTheme) Color.White else Color.Black)
+                }
             }
 
-            // نمایش تاریخچه
             AnimatedVisibility(visible = showHistory) {
                 HistorySection(historyList)
             }
@@ -263,21 +290,21 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                         Icons.Rounded.Troubleshoot,
                         contentDescription = null,
                         modifier = Modifier.size(100.dp),
-                        tint = Color.White.copy(alpha = 0.2f)
+                        tint = if (isDarkTheme) Color.White.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.3f)
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         "آماده برای تشخیص",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = if (isDarkTheme) Color.White.copy(alpha = 0.5f) else Color.Gray
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "لینک کانفیگ خود را وارد کنید تا\nوضعیت سلامت آن را بررسی کنیم.",
                         textAlign = TextAlign.Center,
                         fontSize = 14.sp,
-                        color = Color.White.copy(alpha = 0.4f)
+                        color = if (isDarkTheme) Color.White.copy(alpha = 0.4f) else Color.Gray
                     )
                 }
             }
@@ -326,25 +353,20 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                         }
                     }
 
-                    // Progress
                     AnimatedVisibility(visible = isHealing && healingProgress.isNotEmpty()) {
                         Card(
                             modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF16213E)),
+                            colors = CardDefaults.cardColors(containerColor = if (isDarkTheme) Color(0xFF16213E) else Color.White),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(20.dp),
-                                        color = Color(0xFF6C63FF),
-                                        strokeWidth = 2.dp
-                                    )
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color(0xFF6C63FF), strokeWidth = 2.dp)
                                     Spacer(modifier = Modifier.width(12.dp))
-                                    Text("در حال ترمیم...", fontWeight = FontWeight.Bold, color = Color.White)
+                                    Text("در حال ترمیم...", fontWeight = FontWeight.Bold, color = if (isDarkTheme) Color.White else Color.Black)
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text(healingProgress, fontSize = 13.sp, color = Color.White.copy(alpha = 0.7f))
+                                Text(healingProgress, fontSize = 13.sp, color = if (isDarkTheme) Color.White.copy(alpha = 0.7f) else Color.Gray)
                             }
                         }
                     }
@@ -371,12 +393,7 @@ fun ConfigDoctorScreen(activity: MainActivity) {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             SelectionContainer {
-                                Text(
-                                    text = healedLink ?: "",
-                                    fontSize = 13.sp,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(12.dp)
-                                )
+                                Text(text = healedLink ?: "", fontSize = 13.sp, color = Color.White, modifier = Modifier.padding(12.dp))
                             }
                         }
                         Spacer(modifier = Modifier.height(12.dp))
@@ -400,7 +417,6 @@ fun ConfigDoctorScreen(activity: MainActivity) {
             Spacer(modifier = Modifier.height(30.dp))
         }
 
-        // دیالوگ ترمیم
         if (showHealDialog && diagnosisResult != null) {
             HealModeDialog(
                 onDismiss = { showHealDialog = false },

@@ -38,8 +38,8 @@ private data class HealCandidate(
 object Diagnostician {
 
     enum class HealMode {
-        QUICK,  // فقط TCP (سریع)
-        DEEP    // TCP + Real Delay + تست پایداری
+        QUICK,
+        DEEP
     }
 
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
@@ -114,9 +114,6 @@ object Diagnostician {
         )
     }
 
-    /**
-     * ترمیم کانفیگ با اسکن سه‌مرحله‌ای و تست پایداری
-     */
     suspend fun healConfig(
         context: Context, 
         config: VlessConfig,
@@ -170,9 +167,7 @@ object Diagnostician {
             return@withContext null
         }
 
-        // ۳. مرحله سوم: تست پایداری روی ۳ کاندیدای برتر
         val topCandidates = realDelayPassed.sortedBy { it.realDelayMs }.take(3)
-        
         onProgress("مرحله ۳: تست پایداری روی ${topCandidates.size} کاندیدای برتر...")
         
         var bestStableConfig: VlessConfig? = null
@@ -180,12 +175,10 @@ object Diagnostician {
         
         for ((index, candidate) in topCandidates.withIndex()) {
             onProgress("مرحله ۳: تست پایداری ${index + 1} از ${topCandidates.size} (${candidate.config.address})")
-            
             val delays = mutableListOf<Long>()
             var successCount = 0
             
-            // ۳ بار تست می‌کنیم
-            repeat(3) { attempt ->
+            repeat(3) { 
                 val result = XrayRealDelayTester.test(context, candidate.config, timeoutMs = 5000)
                 if (result.ok && result.delayMs != null) {
                     delays.add(result.delayMs)
@@ -193,7 +186,6 @@ object Diagnostician {
                 }
             }
             
-            // اگه حداقل ۲ بار از ۳ بار موفق بود، پایدار محسوب می‌شه
             if (successCount >= 2) {
                 val avgDelay = delays.average().toLong()
                 if (avgDelay < bestAvgDelay) {
@@ -210,6 +202,47 @@ object Diagnostician {
         
         onProgress("بهترین کانفیگ پایدار انتخاب شد (میانگین ${bestAvgDelay}ms).")
         return@withContext bestStableConfig
+    }
+
+    // --- توابع جدید برای تست و ترمیم گروهی ---
+
+    suspend fun diagnoseBatch(
+        context: Context,
+        links: List<String>,
+        onProgress: (String) -> Unit = {}
+    ): List<Pair<String, DiagnosisResult?>> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<Pair<String, DiagnosisResult?>>()
+        for ((index, link) in links.withIndex()) {
+            onProgress("تست ${index + 1} از ${links.size}...")
+            val parsed = com.configdoctor.parser.ConfigParserFactory.parse(link)
+            parsed.fold(
+                onSuccess = { config ->
+                    try {
+                        val diag = diagnose(context, config)
+                        results.add(link to diag)
+                    } catch (e: Exception) {
+                        results.add(link to null)
+                    }
+                },
+                onFailure = {
+                    results.add(link to null)
+                }
+            )
+        }
+        return@withContext results
+    }
+
+    suspend fun healBatch(
+        context: Context,
+        configs: List<VlessConfig>,
+        onProgress: (String) -> Unit = {}
+    ): List<VlessConfig?> = withContext(Dispatchers.IO) {
+        val healed = mutableListOf<VlessConfig?>()
+        for ((index, config) in configs.withIndex()) {
+            onProgress("ترمیم ${index + 1} از ${configs.size}...")
+            healed.add(healConfig(context, config, HealMode.QUICK, onProgress))
+        }
+        return@withContext healed
     }
 
     private fun serverTypeLabel(type: ServerType): String = when (type) {
