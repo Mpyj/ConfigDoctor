@@ -9,7 +9,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # این خط مجوز ساخت Release رو می‌ده
+      contents: write  # مجوز لازم برای ساخت Release
 
     steps:
       - name: Checkout
@@ -31,26 +31,31 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Build Debug APK
+      # بیلد دیباگ (برای تست خودت)
+      - name: Build Debug APKs
         run: gradle assembleDebug
 
-      - name: Build Release APK
+      # بیلد ریلیز (برای انتشار)
+      - name: Build Release APKs
         run: gradle assembleRelease
 
-      - name: Upload Debug APK
+      # آپلود آرتیفکت‌های دیباگ (همه معماری‌ها)
+      - name: Upload Debug APKs
         uses: actions/upload-artifact@v7
         with:
           name: config-doctor-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
           archive: false
 
-      - name: Upload Release APK
+      # آپلود آرتیفکت‌های ریلیز (همه معماری‌ها)
+      - name: Upload Release APKs
         uses: actions/upload-artifact@v7
         with:
           name: config-doctor-release
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/release/*.apk
           archive: false
 
+      # انتشار خودکار در Releases
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
@@ -59,11 +64,22 @@ jobs:
           name: Config Doctor v0.1.0-${{ github.run_number }}
           body: |
             🚀 نسخه جدید Config Doctor
+            
+            **قابلیت‌ها:**
+            - تشخیص خودکار مشکلات کانفیگ (TCP, TLS, Real Delay)
+            - ترمیم خودکار IP سوخته (Auto-Heal)
             - پشتیبانی از VLESS, VMess, Trojan
-            - تشخیص و ترمیم خودکار
+            - نمایش IP و کشور خروجی
             - تاریخچه تست‌ها
+            
+            **فایل‌های APK:**
+            - `app-arm64-v8a-release.apk` (برای اکثر گوشی‌های مدرن)
+            - `app-armeabi-v7a-release.apk` (برای گوشی‌های قدیمی‌تر)
+            - `app-x86-release.apk` و `app-x86_64-release.apk` (برای شبیه‌سازها)
+            - `app-universal-release.apk` (جامع برای همه)
           draft: false
           prerelease: false
-          files: app/build/outputs/apk/release/app-release.apk
+          files: |
+            app/build/outputs/apk/release/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
