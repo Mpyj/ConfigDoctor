@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # این خط مجوز ساخت Release رو می‌ده
 
     steps:
       - name: Checkout
@@ -29,15 +31,12 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      # بیلد دیباگ (برای تست خودت)
       - name: Build Debug APK
         run: gradle assembleDebug
 
-      # بیلد ریلیز (برای انتشار)
       - name: Build Release APK
         run: gradle assembleRelease
 
-      # آپلود آرتیفکت دیباگ
       - name: Upload Debug APK
         uses: actions/upload-artifact@v7
         with:
@@ -45,7 +44,6 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           archive: false
 
-      # آپلود آرتیفکت ریلیز
       - name: Upload Release APK
         uses: actions/upload-artifact@v7
         with:
@@ -53,7 +51,6 @@ jobs:
           path: app/build/outputs/apk/release/app-release.apk
           archive: false
 
-      # انتشار خودکار نسخه ریلیز در گیت‌هاب
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
