@@ -67,18 +67,18 @@ object XrayRealDelayTester {
     private fun fetchIpAndCountry(config: VlessConfig): Pair<String?, String?> {
         val xrayJson = buildXrayConfigJson(config) ?: return null to null
         
-        // ساخت یه CoreController با یه callback ساده
+        // پیاده‌سازی درست CoreCallbackHandler
         val callback = object : CoreCallbackHandler {
-            override fun startup(): Int = 0
-            override fun shutdown(): Int = 0
-            override fun onEmitStatus(code: Int, msg: String?): Int = 0
+            override fun startup(): Long = 0L
+            override fun shutdown(): Long = 0L
+            override fun onEmitStatus(code: Long, msg: String?): Long = 0L
         }
         
         val controller = CoreController(callback)
         
         return try {
             // ۱. باز کردن تونل موقت
-            controller.startLoop(xrayJson, 0) // 0 یعنی TUN استفاده نشه (فقط پروکسی)
+            controller.startLoop(xrayJson, 0)
             
             // ۲. صبر برای بالا اومدن تونل
             Thread.sleep(1000)
@@ -100,9 +100,6 @@ object XrayRealDelayTester {
         }
     }
 
-    /**
-     * منبع اول: Cloudflare Trace (هم IP و هم کشور)
-     */
     private fun fetchFromCloudflareTrace(): Pair<String?, String?> {
         return try {
             val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", HTTP_PORT))
@@ -127,9 +124,6 @@ object XrayRealDelayTester {
         }
     }
 
-    /**
-     * منبع دوم: Ipify (فقط IP) + یه API دیگه برای کشور
-     */
     private fun fetchFromIpify(): Pair<String?, String?> {
         return try {
             val proxy = Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", HTTP_PORT))
@@ -171,7 +165,6 @@ object XrayRealDelayTester {
         return try {
             val root = JSONObject()
 
-            // Inbounds (SOCKS + HTTP)
             val inbounds = JSONArray()
 
             val socksInbound = JSONObject()
@@ -197,7 +190,6 @@ object XrayRealDelayTester {
 
             root.put("inbounds", inbounds)
 
-            // Outbounds (کانفیگ VLESS)
             val outbounds = JSONArray()
             val outbound = JSONObject()
             outbound.put("tag", "proxy")
@@ -220,7 +212,6 @@ object XrayRealDelayTester {
             settings.put("vnext", vnext)
             outbound.put("settings", settings)
 
-            // Stream Settings
             val streamSettings = JSONObject()
             streamSettings.put("network", config.networkType.ifBlank { "tcp" })
             streamSettings.put("security", config.security.ifBlank { "none" })
