@@ -30,6 +30,12 @@ data class DiagnosisResult(
     val summary: String
 )
 
+// یک کلاس داخلی برای نگه‌داری کاندیدای ترمیم
+private data class HealCandidate(
+    val config: VlessConfig,
+    val realDelayMs: Long
+)
+
 object Diagnostician {
 
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
@@ -101,16 +107,12 @@ object Diagnostician {
     }
 
     /**
-     * ترمیم کانفیگ: اولویت‌بندی هوشمند بر اساس نوع شبکه‌ی اپراتور کاربر
-     * - اول: نسخه‌ی مخالف (اگه IPv4 بود، IPv6 رو تست کن و برعکس)
-     * - دوم: لیست IPهای تمیز (اول IPv6 چون تو گفتی برات بهتره، بعد IPv4)
+     * ترمیم کانفیگ: تست همه‌ی کاندیداها و انتخاب بهترین (کمترین Real Delay)
      */
     suspend fun healConfig(context: Context, config: VlessConfig): VlessConfig? = withContext(Dispatchers.IO) {
-        
-        // *** این خط مهمه: اگه پورت -1 بود، به 443 تغییرش بده ***
         val baseConfig = if (config.port <= 0) config.copy(port = 443) else config
-
-        // ۱. تشخیص نوع آدرس فعلی
+        
+        // ۱. ساخت لیست کاندیداها (هم IPv6 و هم IPv4 از لیست‌های مختلف)
         val currentIps = try {
             InetAddress.getAllByName(baseConfig.address).map { it.hostAddress }
         } catch (e: Exception) { emptyList() }
@@ -120,37 +122,38 @@ object Diagnostician {
 
         val candidates = mutableListOf<String>()
 
-        // ۲. اولویت اول: نسخه‌ی مخالف (اگه IPv4 داره، اول IPv6 رو تست کن)
-        if (hasIpv4) {
-            currentIps.filter { it.contains(":") }.forEach { candidates.add(it) }
-        }
-        if (hasIpv6) {
-            currentIps.filter { it.contains(".") }.forEach { candidates.add(it) }
-        }
+        // اولویت با نسخه‌ی مخالف است
+        if (hasIpv4) currentIps.filter { it.contains(":") }.forEach { candidates.add(it) }
+        if (hasIpv6) currentIps.filter { it.contains(".") }.forEach { candidates.add(it) }
 
-        // ۳. اولویت دوم: لیست IPهای تمیز کلادفلر (اول IPv6، بعد IPv4)
+        // اضافه کردن IPهای تمیز کلادفلر (هم IPv6 و هم IPv4)
         val ipv6Clean = CloudflareCleanIps.ips.filter { it.contains(":") }
         val ipv4Clean = CloudflareCleanIps.ips.filter { it.contains(".") }
         
-        ipv6Clean.forEach { candidates.add(it) }
-        ipv4Clean.forEach { candidates.add(it) }
+        candidates.addAll(ipv6Clean)
+        candidates.addAll(ipv4Clean)
 
-        // ۴. تست کاندیداها به ترتیب اولویت
+        // ۲. تست همه‌ی کاندیداها و جمع‌آوری نتایج موفق
+        val successfulCandidates = mutableListOf<HealCandidate>()
+
         for (candidateIp in candidates.distinct()) {
             val newConfig = baseConfig.copy(address = candidateIp)
             
-            // تست TCP
+            // تست سریع TCP (برای رد کردن IPهای سوخته)
             val tcpTest = TcpTester.test(candidateIp, baseConfig.port, timeoutMs = 2000)
             if (tcpTest.ok) {
-                // اگه TCP جواب داد، Real Delay رو چک کن (برای اطمینان از سالم بودن تونل)
+                // تست Real Delay (برای اطمینان از سالم بودن تونل)
                 val realDelayTest = XrayRealDelayTester.test(context, newConfig, timeoutMs = 4000)
-                if (realDelayTest.ok) {
-                    return@withContext newConfig
+                if (realDelayTest.ok && realDelayTest.delayMs != null) {
+                    successfulCandidates.add(HealCandidate(newConfig, realDelayTest.delayMs!!))
                 }
             }
         }
+
+        // ۳. انتخاب بهترین (کمترین Real Delay)
+        val bestCandidate = successfulCandidates.minByOrNull { it.realDelayMs }
         
-        return@withContext null
+        return@withContext bestCandidate?.config
     }
 
     private fun serverTypeLabel(type: ServerType): String = when (type) {
