@@ -13,19 +13,31 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.configdoctor.MainActivity
+import com.configdoctor.data.AppLanguage
+import com.configdoctor.data.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     activity: MainActivity,
     isDarkTheme: Boolean,
-    onToggleTheme: () -> Unit
+    themeMode: ThemeMode,
+    language: AppLanguage,
+    onToggleTheme: (ThemeMode) -> Unit,
+    onLanguageChange: (AppLanguage) -> Unit
 ) {
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
 
     if (showSettings) {
-        SettingsScreen(onBack = { showSettings = false })
+        SettingsScreen(
+            isDarkTheme = isDarkTheme,
+            themeMode = themeMode,
+            language = language,
+            onThemeChange = onToggleTheme,
+            onLanguageChange = onLanguageChange,
+            onBack = { showSettings = false }
+        )
         return
     }
 
@@ -42,7 +54,6 @@ fun MainScreen(
             .background(Brush.verticalGradient(colors = bgColors))
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // --- هدر و دکمه‌های بالا ---
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -64,17 +75,9 @@ fun MainScreen(
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Rounded.Settings, contentDescription = "تنظیمات", tint = textColor)
                     }
-                    IconButton(onClick = onToggleTheme) {
-                        Icon(
-                            if (isDarkTheme) Icons.Rounded.LightMode else Icons.Rounded.DarkMode,
-                            contentDescription = "تغییر تم",
-                            tint = textColor
-                        )
-                    }
                 }
             }
 
-            // --- تب‌ها ---
             TabRow(
                 selectedTabIndex = selectedTabIndex,
                 containerColor = Color.Transparent,
@@ -93,7 +96,6 @@ fun MainScreen(
                 )
             }
 
-            // --- محتوای تب ---
             Box(modifier = Modifier.weight(1f)) {
                 if (selectedTabIndex == 0) {
                     SingleConfigTab(activity = activity, isDarkTheme = isDarkTheme)
