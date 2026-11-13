@@ -45,7 +45,7 @@ fun CompactResultCard(
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(14.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             // ردیف اول: وضعیت و دکمه کپی
@@ -66,29 +66,25 @@ fun CompactResultCard(
 
             Spacer(Modifier.height(8.dp))
 
-            // ردیف دوم: اطلاعات کلیدی (۴ ستون)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text("Real Delay", fontSize = 10.sp, color = subTextColor)
-                    Text("${result.realDelayMs ?: "-"} ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                }
-                Column {
-                    Text("IP خروجی", fontSize = 10.sp, color = subTextColor)
-                    Text(result.outputIp ?: "-", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                }
-                Column {
-                    Text("کشور", fontSize = 10.sp, color = subTextColor)
-                    Text(formatCountry(result.outputCountry), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                }
-                // ─── ستون جدید: پکت‌لاس ───
-                Column {
-                    Text("پکت‌لاس", fontSize = 10.sp, color = subTextColor)
-                    Text(plText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = plColor)
-                }
+            // ردیف دوم: ۲ ستون
+            Row(modifier = Modifier.fillMaxWidth()) {
+                MiniInfo("Real Delay", "${result.realDelayMs ?: "-"} ms", textColor, subTextColor, Modifier.weight(1f))
+                MiniInfo("پکت‌لاس", plText, plColor, subTextColor, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(6.dp))
+            // ردیف سوم: ۲ ستون
+            Row(modifier = Modifier.fillMaxWidth()) {
+                MiniInfo("IP خروجی", result.outputIp ?: "-", textColor, subTextColor, Modifier.weight(1f))
+                MiniInfo("کشور", formatCountry(result.outputCountry), textColor, subTextColor, Modifier.weight(1f))
             }
         }
+    }
+}
+
+@Composable
+private fun MiniInfo(title: String, value: String, valueColor: Color, titleColor: Color, modifier: Modifier) {
+    Column(modifier = modifier) {
+        Text(title, fontSize = 10.sp, color = titleColor)
+        Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = valueColor, maxLines = 1)
     }
 }

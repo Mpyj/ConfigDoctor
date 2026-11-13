@@ -43,7 +43,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
     var errorText by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var isHealing by remember { mutableStateOf(false) }
-    var healingProgress by remember { mutableStateOf("") }
+    var healingProgressList by remember { mutableStateOf<List<String>>(emptyList()) }
     var showHealDialog by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
 
@@ -68,6 +68,13 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
 
     val textColor = if (isDarkTheme) Color.White else Color.Black
     val subTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
+
+    // تابع کمکی برای اضافه کردن به لیست progress (حداکثر ۵ تا)
+    fun addProgress(msg: String) {
+        scope.launch(Dispatchers.Main) {
+            healingProgressList = (healingProgressList + msg).takeLast(5)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -120,6 +127,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                 diagnosisResult = null
                 healedLink = null
                 errorText = null
+                healingProgressList = emptyList()
                 scope.launch {
                     val parsed = ConfigParserFactory.parse(link)
                     parsed.fold(
@@ -149,16 +157,18 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             Text(if (isLoading) "در حال بررسی..." else "شروع تشخیص", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
 
-        // دکمه تاریخچه
-        OutlinedButton(
-            onClick = { showHistory = !showHistory },
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            shape = RoundedCornerShape(12.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, subTextColor.copy(alpha = 0.5f))
-        ) {
-            Icon(Icons.Rounded.History, contentDescription = null, tint = textColor)
-            Spacer(Modifier.width(8.dp))
-            Text(if (showHistory) "بستن تاریخچه" else "نمایش تاریخچه", color = textColor)
+        // دکمه تاریخچه — فقط اگه تاریخچه خالی نباشه
+        if (historyList.isNotEmpty()) {
+            OutlinedButton(
+                onClick = { showHistory = !showHistory },
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, subTextColor.copy(alpha = 0.5f))
+            ) {
+                Icon(Icons.Rounded.History, contentDescription = null, tint = textColor)
+                Spacer(Modifier.width(8.dp))
+                Text(if (showHistory) "بستن تاریخچه" else "نمایش تاریخچه (${historyList.size})", color = textColor)
+            }
         }
 
         AnimatedVisibility(visible = showHistory) {
@@ -204,9 +214,9 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         AnimatedVisibility(visible = diagnosisResult != null) {
             Column {
                 val res = diagnosisResult!!
-                StatusCard(status = res.overallStatus, summary = res.summary)
+                StatusCard(status = res.overallStatus, summary = res.summary, isDarkTheme = isDarkTheme)
                 Spacer(modifier = Modifier.height(16.dp))
-                DetailGrid(res)
+                DetailGrid(res, isDarkTheme)
                 Spacer(modifier = Modifier.height(16.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -225,7 +235,8 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                         Text("کپی", color = Color(0xFF6C63FF))
                     }
 
-                    if (res.overallStatus == OverallStatus.IP_DEAD || res.overallStatus == OverallStatus.UNKNOWN) {
+                    // دکمه ترمیم برای همه‌ی وضعیت‌های غیر HEALTHY
+                    if (res.overallStatus != OverallStatus.HEALTHY) {
                         Button(
                             onClick = { showHealDialog = true },
                             modifier = Modifier.weight(1f).height(48.dp),
@@ -244,7 +255,8 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     }
                 }
 
-                AnimatedVisibility(visible = isHealing && healingProgress.isNotEmpty()) {
+                // Progress به صورت لیست آخرین ۵ پیام
+                AnimatedVisibility(visible = isHealing && healingProgressList.isNotEmpty()) {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                         colors = CardDefaults.cardColors(containerColor = if (isDarkTheme) Color(0xFF16213E) else Color.White),
@@ -256,8 +268,10 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("در حال ترمیم...", fontWeight = FontWeight.Bold, color = textColor)
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(healingProgress, fontSize = 12.sp, color = subTextColor)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            healingProgressList.forEach { p ->
+                                Text("• $p", fontSize = 11.sp, color = subTextColor, lineHeight = 16.sp)
+                            }
                         }
                     }
                 }
@@ -308,10 +322,11 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             onQuick = {
                 showHealDialog = false
                 isHealing = true
-                healingProgress = "شروع ترمیم (سریع)..."
+                healingProgressList = emptyList()
+                addProgress("شروع ترمیم (سریع)...")
                 scope.launch {
                     val res = diagnosisResult!!
-                    val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.QUICK) { p -> scope.launch(Dispatchers.Main) { healingProgress = p } }
+                    val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.QUICK) { p -> addProgress(p) }
                     if (healedConfig != null) {
                         healedLink = ConfigParserFactory.buildLink(healedConfig)
                         historyDao.insert(HistoryEntity(link = healedLink!!, timestamp = System.currentTimeMillis(), status = "HEALED", outputIp = res.outputIp, outputCountry = res.outputCountry, realDelayMs = res.realDelayMs))
@@ -322,10 +337,11 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             onDeep = {
                 showHealDialog = false
                 isHealing = true
-                healingProgress = "شروع ترمیم (کامل)..."
+                healingProgressList = emptyList()
+                addProgress("شروع ترمیم (کامل)...")
                 scope.launch {
                     val res = diagnosisResult!!
-                    val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.DEEP) { p -> scope.launch(Dispatchers.Main) { healingProgress = p } }
+                    val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.DEEP) { p -> addProgress(p) }
                     if (healedConfig != null) {
                         healedLink = ConfigParserFactory.buildLink(healedConfig)
                         historyDao.insert(HistoryEntity(link = healedLink!!, timestamp = System.currentTimeMillis(), status = "HEALED", outputIp = res.outputIp, outputCountry = res.outputCountry, realDelayMs = res.realDelayMs))

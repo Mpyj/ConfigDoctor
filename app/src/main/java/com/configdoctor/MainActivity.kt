@@ -59,7 +59,6 @@ class MainActivity : ComponentActivity() {
                             isDarkTheme = isDarkTheme,
                             onToggleTheme = {
                                 isDarkTheme = !isDarkTheme
-                                // ذخیره در DataStore
                                 lifecycleScope.launch {
                                     SettingsManager.setTheme(this@MainActivity, isDarkTheme)
                                 }

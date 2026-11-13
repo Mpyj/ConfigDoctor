@@ -3,8 +3,14 @@ package com.configdoctor.diagnose
 import android.content.Context
 import com.configdoctor.model.VlessConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.net.InetAddress
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class OverallStatus {
     HEALTHY,
@@ -43,6 +49,9 @@ object Diagnostician {
         DEEP
     }
 
+    // ─────────────────────────────
+    // ۱) تشخیص وضعیت کانفیگ (تک)
+    // ─────────────────────────────
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
         val (serverType, resolvedIp) = ServerTypeDetector.detect(config.address)
         val tcp = TcpTester.test(config.address, config.port)
@@ -70,7 +79,7 @@ object Diagnostician {
 
         val realDelay = XrayRealDelayTester.test(context, config)
 
-        // تست پکت‌لاس فقط برای کانفیگ‌های سالم (Real Delay موفق)
+        // تست پکت‌لاس فقط برای کانفیگ‌های سالم
         val packetLoss = if (realDelay.ok) {
             PacketLossTester.test(
                 address = config.address,
@@ -131,112 +140,141 @@ object Diagnostician {
         )
     }
 
+    // ─────────────────────────────
+    // ۲) ترمیم کانفیگ (چهار مرحله‌ای با موازی‌سازی)
+    // ─────────────────────────────
     suspend fun healConfig(
-        context: Context, 
+        context: Context,
         config: VlessConfig,
         mode: HealMode = HealMode.DEEP,
         onProgress: (String) -> Unit = {}
     ): VlessConfig? = withContext(Dispatchers.IO) {
         val baseConfig = if (config.port <= 0) config.copy(port = 443) else config
 
+        // ── مرحله ۱: تولید IPها و تست TCP (موازی با محدودیت ۱۰) ──
         onProgress("تولید IPهای جدید...")
         val randomIps = CloudflareCleanIps.generateRandomIps(100)
-        
+
         val ipv6Candidates = randomIps.filter { it.contains(":") }
         val ipv4Candidates = randomIps.filter { it.contains(".") }
         val allCandidates = (ipv6Candidates + ipv4Candidates).distinct()
 
-        onProgress("مرحله ۱: غربالگری ${allCandidates.size} IP...")
-        val tcpPassed = mutableListOf<String>()
-        for ((index, ip) in allCandidates.withIndex()) {
-            if (index % 10 == 0) {
-                onProgress("مرحله ۱: تست ${index + 1} از ${allCandidates.size}")
-            }
-            if (TcpTester.test(ip, baseConfig.port, timeoutMs = 1000).ok) {
-                tcpPassed.add(ip)
-                if (mode == HealMode.QUICK) {
-                    onProgress("حالت سریع: اولین IP سالم پیدا شد.")
-                    return@withContext baseConfig.copy(address = ip)
+        onProgress("مرحله ۱: غربالگری ${allCandidates.size} IP (موازی)...")
+        val tcpCounter = AtomicInteger(0)
+        val tcpSemaphore = Semaphore(10)
+
+        val tcpPassed = coroutineScope {
+            allCandidates.map { ip ->
+                async(Dispatchers.IO) {
+                    tcpSemaphore.withPermit {
+                        val done = tcpCounter.incrementAndGet()
+                        if (done % 10 == 0) {
+                            onProgress("مرحله ۱: تست $done از ${allCandidates.size}")
+                        }
+                        if (TcpTester.test(ip, baseConfig.port, timeoutMs = 1000).ok) ip else null
+                    }
                 }
-            }
+            }.awaitAll().filterNotNull()
         }
-        
+
         if (tcpPassed.isEmpty()) {
             onProgress("هیچ IP سالمی در مرحله ۱ پیدا نشد.")
             return@withContext null
         }
 
-        val toTestRealDelay = tcpPassed.take(20)
-        onProgress("مرحله ۲: تست Real Delay روی ${toTestRealDelay.size} IP...")
-        val realDelayPassed = mutableListOf<HealCandidate>()
-        
-        for ((index, ip) in toTestRealDelay.withIndex()) {
-            onProgress("مرحله ۲: تست ${index + 1} از ${toTestRealDelay.size} ($ip)")
-            val newConfig = baseConfig.copy(address = ip)
-            val result = XrayRealDelayTester.test(context, newConfig, timeoutMs = 5000)
-            if (result.ok && result.delayMs != null) {
-                realDelayPassed.add(HealCandidate(newConfig, result.delayMs))
-            }
+        // حالت QUICK: اگه اولین IP سالم کافیه، همون رو برگردون
+        if (mode == HealMode.QUICK) {
+            onProgress("حالت سریع: اولین IP سالم پیدا شد.")
+            return@withContext baseConfig.copy(address = tcpPassed.first())
         }
-        
+
+        // ── مرحله ۲: تست Real Delay (موازی با محدودیت ۵) ──
+        val toTestRealDelay = tcpPassed.take(20)
+        onProgress("مرحله ۲: تست Real Delay روی ${toTestRealDelay.size} IP (موازی)...")
+        val rdCounter = AtomicInteger(0)
+        val rdSemaphore = Semaphore(5)
+
+        val realDelayPassed = coroutineScope {
+            toTestRealDelay.map { ip ->
+                async(Dispatchers.IO) {
+                    rdSemaphore.withPermit {
+                        val done = rdCounter.incrementAndGet()
+                        onProgress("مرحله ۲: تست $done از ${toTestRealDelay.size} ($ip)")
+                        val newConfig = baseConfig.copy(address = ip)
+                        val result = XrayRealDelayTester.test(context, newConfig, timeoutMs = 5000)
+                        if (result.ok && result.delayMs != null) {
+                            HealCandidate(newConfig, result.delayMs)
+                        } else null
+                    }
+                }
+            }.awaitAll().filterNotNull()
+        }
+
         if (realDelayPassed.isEmpty()) {
             onProgress("هیچ تونل سالمی در مرحله ۲ پیدا نشد.")
             return@withContext null
         }
 
+        // ── مرحله ۳: تست پایداری روی ۳ کاندیدای برتر (موازی) ──
         val topCandidates = realDelayPassed.sortedBy { it.realDelayMs }.take(3)
-        onProgress("مرحله ۳: تست پایداری روی ${topCandidates.size} کاندیدای برتر...")
-        
-        var bestStableConfig: VlessConfig? = null
-        var bestAvgDelay = Long.MAX_VALUE
-        
-        for ((index, candidate) in topCandidates.withIndex()) {
-            onProgress("مرحله ۳: تست پایداری ${index + 1} از ${topCandidates.size} (${candidate.config.address})")
-            val delays = mutableListOf<Long>()
-            var successCount = 0
-            
-            repeat(3) { 
-                val result = XrayRealDelayTester.test(context, candidate.config, timeoutMs = 5000)
-                if (result.ok && result.delayMs != null) {
-                    delays.add(result.delayMs)
-                    successCount++
+        onProgress("مرحله ۳: تست پایداری روی ${topCandidates.size} کاندیدای برتر (موازی)...")
+
+        data class StabilityResult(val config: VlessConfig, val avgDelay: Long?)
+
+        val stabilityResults = coroutineScope {
+            topCandidates.mapIndexed { index, candidate ->
+                async(Dispatchers.IO) {
+                    onProgress("مرحله ۳: تست پایداری ${index + 1} از ${topCandidates.size} (${candidate.config.address})")
+                    val delays = mutableListOf<Long>()
+                    var successCount = 0
+
+                    repeat(3) {
+                        val result = XrayRealDelayTester.test(context, candidate.config, timeoutMs = 5000)
+                        if (result.ok && result.delayMs != null) {
+                            delays.add(result.delayMs)
+                            successCount++
+                        }
+                    }
+
+                    if (successCount >= 2) {
+                        StabilityResult(candidate.config, delays.average().toLong())
+                    } else {
+                        StabilityResult(candidate.config, null)
+                    }
                 }
-            }
-            
-            if (successCount >= 2) {
-                val avgDelay = delays.average().toLong()
-                if (avgDelay < bestAvgDelay) {
-                    bestAvgDelay = avgDelay
-                    bestStableConfig = candidate.config
-                }
-            }
+            }.awaitAll()
         }
-        
-        if (bestStableConfig == null) {
+
+        val stableCandidates = stabilityResults.filter { it.avgDelay != null }
+        if (stableCandidates.isEmpty()) {
             onProgress("هیچ کاندیدای پایداری پیدا نشد. استفاده از بهترین گزینه‌ی قبلی...")
             return@withContext realDelayPassed.minByOrNull { it.realDelayMs }?.config
         }
 
-        // ─── مرحله ۴: تست پکت‌لاس روی کاندیدای برتر ───
-        onProgress("مرحله ۴: تست پکت‌لاس روی ${topCandidates.size} کاندیدای برتر...")
+        val bestStableConfig = stableCandidates.minByOrNull { it.avgDelay!! }?.config
+        val bestAvgDelay = stableCandidates.minByOrNull { it.avgDelay!! }?.avgDelay ?: Long.MAX_VALUE
 
-        val packetLossPassed = mutableListOf<Pair<VlessConfig, PacketLossResult>>()
+        // ── مرحله ۴: تست پکت‌لاس روی ۳ کاندیدای برتر (موازی) ──
+        onProgress("مرحله ۴: تست پکت‌لاس روی ${topCandidates.size} کاندیدای برتر (موازی)...")
 
-        for ((index, candidate) in topCandidates.withIndex()) {
-            onProgress("مرحله ۴: پینگ ${index + 1} از ${topCandidates.size} (${candidate.config.address})")
-            val pl = PacketLossTester.test(
-                address = candidate.config.address,
-                port = candidate.config.port,
-                count = 10,
-                intervalMs = 150,
-                timeoutMs = 2000
-            )
-            onProgress(
-                "مرحله ۴: ${candidate.config.address} → پکت‌لاس ${"%.0f".format(pl.lossPercent)}% " +
-                        "(دریافت ${pl.received}/${pl.sent}" +
-                        (if (pl.avgLatencyMs != null) "، میانگین ${pl.avgLatencyMs}ms" else "") + ")"
-            )
-            packetLossPassed.add(candidate.config to pl)
+        val packetLossPassed = coroutineScope {
+            topCandidates.mapIndexed { index, candidate ->
+                async(Dispatchers.IO) {
+                    val pl = PacketLossTester.test(
+                        address = candidate.config.address,
+                        port = candidate.config.port,
+                        count = 10,
+                        intervalMs = 150,
+                        timeoutMs = 2000
+                    )
+                    onProgress(
+                        "مرحله ۴: ${candidate.config.address} → پکت‌لاس ${"%.0f".format(pl.lossPercent)}% " +
+                                "(دریافت ${pl.received}/${pl.sent}" +
+                                (if (pl.avgLatencyMs != null) "، میانگین ${pl.avgLatencyMs}ms" else "") + ")"
+                    )
+                    candidate.config to pl
+                }
+            }.awaitAll()
         }
 
         val bestByPacketLoss = packetLossPassed
@@ -259,58 +297,86 @@ object Diagnostician {
         return@withContext bestStableConfig
     }
 
-    // --- توابع گروهی ---
-
+    // ─────────────────────────────
+    // ۳) تست گروهی (موازی با محدودیت ۵)
+    // ─────────────────────────────
     suspend fun diagnoseBatch(
         context: Context,
         links: List<String>,
         onProgress: (String, Float) -> Unit = { _, _ -> }
     ): List<Pair<String, DiagnosisResult?>> = withContext(Dispatchers.IO) {
-        val results = mutableListOf<Pair<String, DiagnosisResult?>>()
         val total = links.size
-        for ((index, link) in links.withIndex()) {
-            val percent = index.toFloat() / total.toFloat()
-            val parsed = com.configdoctor.parser.ConfigParserFactory.parse(link)
-            val ipText = parsed.getOrNull()?.address ?: "ناشناس"
-            onProgress("در حال تست کانفیگ ${index + 1} از $total (آی‌پی: $ipText)", percent)
-            
-            parsed.fold(
-                onSuccess = { config ->
-                    try {
-                        val diag = diagnose(context, config)
-                        results.add(link to diag)
-                    } catch (e: Exception) {
-                        results.add(link to null)
+        if (total == 0) return@withContext emptyList()
+
+        val completed = AtomicInteger(0)
+        val semaphore = Semaphore(5)  // حداکثر ۵ تست همزمان
+
+        coroutineScope {
+            links.mapIndexed { index, link ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        val parsed = com.configdoctor.parser.ConfigParserFactory.parse(link)
+                        val ipText = parsed.getOrNull()?.address ?: "ناشناس"
+                        onProgress("در حال تست کانفیگ $index از $total (آی‌پی: $ipText)", index.toFloat() / total)
+
+                        val result = parsed.fold(
+                            onSuccess = { config ->
+                                try {
+                                    diagnose(context, config)
+                                } catch (e: Exception) {
+                                    null
+                                }
+                            },
+                            onFailure = { null }
+                        )
+
+                        val done = completed.incrementAndGet()
+                        onProgress("تست شد: $done از $total", done.toFloat() / total)
+
+                        link to result
                     }
-                },
-                onFailure = {
-                    results.add(link to null)
                 }
-            )
+            }.awaitAll()
+        }.also {
+            onProgress("تست کامل شد", 1f)
         }
-        onProgress("تست کامل شد", 1f)
-        return@withContext results
     }
 
+    // ─────────────────────────────
+    // ۴) ترمیم گروهی (موازی با محدودیت ۳)
+    // ─────────────────────────────
     suspend fun healBatch(
         context: Context,
         configs: List<VlessConfig>,
         mode: HealMode = HealMode.QUICK,
         onProgress: (String, Float) -> Unit = { _, _ -> }
     ): List<Pair<VlessConfig, VlessConfig?>> = withContext(Dispatchers.IO) {
-        val healed = mutableListOf<Pair<VlessConfig, VlessConfig?>>()
         val total = configs.size
-        for ((index, config) in configs.withIndex()) {
-            val percent = index.toFloat() / total.toFloat()
-            onProgress("در حال ترمیم کانفیگ ${index + 1} از $total (آی‌پی: ${config.address})", percent)
-            
-            val healedConfig = healConfig(context, config, mode) { progressMsg ->
-                onProgress("ترمیم ${index + 1} از $total: $progressMsg", percent)
-            }
-            healed.add(config to healedConfig)
+        if (total == 0) return@withContext emptyList()
+
+        val completed = AtomicInteger(0)
+        val semaphore = Semaphore(3)  // حداکثر ۳ ترمیم همزمان (heal سنگینه)
+
+        coroutineScope {
+            configs.mapIndexed { index, config ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        onProgress("در حال ترمیم کانفیگ ${index + 1} از $total (${config.address})", index.toFloat() / total)
+
+                        val healed = healConfig(context, config, mode) { progressMsg ->
+                            onProgress("ترمیم ${index + 1} از $total: $progressMsg", index.toFloat() / total)
+                        }
+
+                        val done = completed.incrementAndGet()
+                        onProgress("ترمیم شد: $done از $total", done.toFloat() / total)
+
+                        config to healed
+                    }
+                }
+            }.awaitAll()
+        }.also {
+            onProgress("ترمیم کامل شد", 1f)
         }
-        onProgress("ترمیم کامل شد", 1f)
-        return@withContext healed
     }
 
     private fun serverTypeLabel(type: ServerType): String = when (type) {

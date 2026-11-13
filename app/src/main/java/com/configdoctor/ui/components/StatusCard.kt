@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -19,7 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.configdoctor.diagnose.OverallStatus
 
 @Composable
-fun StatusCard(status: OverallStatus, summary: String) {
+fun StatusCard(status: OverallStatus, summary: String, isDarkTheme: Boolean) {
     val (color, icon, title) = when (status) {
         OverallStatus.HEALTHY -> Triple(Color(0xFF4CAF50), Icons.Rounded.CheckCircle, "کانفیگ سالم است")
         OverallStatus.SNI_FILTERED -> Triple(Color(0xFFFFC107), Icons.Rounded.Warning, "احتمال فیلتر SNI")
@@ -27,33 +28,57 @@ fun StatusCard(status: OverallStatus, summary: String) {
         else -> Triple(Color(0xFF9E9E9E), Icons.Rounded.Info, "وضعیت نامشخص")
     }
 
+    // رنگ کارت بر اساس تم
+    val cardBg = if (isDarkTheme) Color(0xFF16213E) else Color.White
+    val textColor = if (isDarkTheme) Color(0xFFE0E0E0) else Color.DarkGray
+    val borderColor = color.copy(alpha = 0.3f)
+
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
+        colors = CardDefaults.elevatedCardColors(containerColor = cardBg),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 6.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                // گرادیانت ملایم از رنگ استاتوس به سمت شفاف
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(color.copy(alpha = 0.12f), Color.Transparent)
+                    )
+                )
         ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .background(color.copy(alpha = 0.15f), CircleShape)
-                    .clip(CircleShape),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(32.dp))
-            }
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = color)
-                Spacer(modifier = Modifier.height(6.dp))
-                SelectionContainer {
-                    Text(text = summary, fontSize = 13.sp, color = Color.DarkGray, lineHeight = 20.sp)
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(color.copy(alpha = 0.15f), CircleShape)
+                        .clip(CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(imageVector = icon, contentDescription = null, tint = color, modifier = Modifier.size(32.dp))
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(text = title, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = color)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    SelectionContainer {
+                        Text(text = summary, fontSize = 13.sp, color = textColor, lineHeight = 20.sp)
+                    }
                 }
             }
+            // خط رنگی پایین کارت
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .background(Brush.horizontalGradient(listOf(color, color.copy(alpha = 0.2f))))
+            )
         }
     }
 }

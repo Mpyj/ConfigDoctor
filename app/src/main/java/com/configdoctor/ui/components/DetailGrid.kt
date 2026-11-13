@@ -1,5 +1,6 @@
 package com.configdoctor.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -19,80 +20,87 @@ import com.configdoctor.diagnose.ServerType
 import com.configdoctor.diagnose.formatCountry
 
 @Composable
-fun DetailGrid(res: DiagnosisResult) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            DetailItemCard("نوع سرور", serverTypeLabel(res.serverType), Icons.Rounded.Dns, Color(0xFF2196F3), Modifier.weight(1f))
-            DetailItemCard("IP سرور", res.resolvedIp ?: "-", Icons.Rounded.Public, Color(0xFF9C27B0), Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            DetailItemCard("TCP RTT", "${res.tcpLatencyMs ?: "-"} ms", Icons.Rounded.NetworkCheck, Color(0xFFFF9800), Modifier.weight(1f))
-            DetailItemCard("Real Delay", "${res.realDelayMs ?: "-"} ms", Icons.Rounded.Speed, Color(0xFFE91E63), Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            val tlsText = when (res.tlsOk) {
-                true -> "موفق"
-                false -> "ناموفق"
-                null -> "انجام نشد"
+fun DetailGrid(res: DiagnosisResult, isDarkTheme: Boolean) {
+    val cardBg = if (isDarkTheme) Color(0xFF16213E) else Color.White
+    val textColor = if (isDarkTheme) Color.White else Color.DarkGray
+    val subTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
+    val dividerColor = if (isDarkTheme) Color.White.copy(alpha = 0.08f) else Color.Gray.copy(alpha = 0.15f)
+
+    val pl = res.packetLoss
+    val plText = if (pl != null) "${"%.0f".format(pl.lossPercent)}% (${pl.received}/${pl.sent})" else "-"
+    val plColor = when {
+        pl == null -> subTextColor
+        pl.lossPercent <= 5f -> Color(0xFF4CAF50)
+        pl.lossPercent <= 20f -> Color(0xFFFFC107)
+        else -> Color(0xFFF44336)
+    }
+    val tlsText = when (res.tlsOk) {
+        true -> "موفق"
+        false -> "ناموفق"
+        null -> "انجام نشد"
+    }
+    val tlsColor = when (res.tlsOk) {
+        true -> Color(0xFF4CAF50)
+        false -> Color(0xFFF44336)
+        null -> subTextColor
+    }
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.elevatedCardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.Assessment, contentDescription = null, tint = Color(0xFF6C63FF), modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("جزئیات فنی", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor)
             }
-            DetailItemCard("TLS", tlsText, Icons.Rounded.Security, Color(0xFF009688), Modifier.weight(1f))
-            DetailItemCard("IP خروجی", res.outputIp ?: "-", Icons.Rounded.ExitToApp, Color(0xFF795548), Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            DetailItemCard("کشور خروجی", formatCountry(res.outputCountry), Icons.Rounded.Flag, Color(0xFF3F51B5), Modifier.weight(1f))
-            // ─── کارت جدید: پکت‌لاس ───
-            val pl = res.packetLoss
-            val plText = if (pl != null) {
-                "${"%.0f".format(pl.lossPercent)}% (${pl.received}/${pl.sent})"
-            } else "-"
-            val plColor = when {
-                pl == null -> Color(0xFF9E9E9E)
-                pl.lossPercent <= 5f -> Color(0xFF4CAF50)
-                pl.lossPercent <= 20f -> Color(0xFFFFC107)
-                else -> Color(0xFFF44336)
-            }
-            DetailItemCard("پکت‌لاس", plText, Icons.Rounded.NetworkPing, plColor, Modifier.weight(1f))
-        }
-        // ─── ردیف جدید: Jitter + میانگین تأخیر پکت ───
-        if (res.packetLoss != null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                DetailItemCard(
-                    "Jitter",
-                    "${res.packetLoss.jitterMs ?: "-"} ms",
-                    Icons.Rounded.Timeline,
-                    Color(0xFF673AB7),
-                    Modifier.weight(1f)
-                )
-                DetailItemCard(
-                    "میانگین پینگ",
-                    "${res.packetLoss.avgLatencyMs ?: "-"} ms",
-                    Icons.Rounded.Speed,
-                    Color(0xFF00BCD4),
-                    Modifier.weight(1f)
-                )
+            HorizontalDivider(color = dividerColor)
+
+            // ردیف‌ها
+            DetailRow("نوع سرور", serverTypeLabel(res.serverType), Icons.Rounded.Dns, Color(0xFF2196F3), textColor, subTextColor)
+            DetailRow("IP سرور", res.resolvedIp ?: "-", Icons.Rounded.Public, Color(0xFF9C27B0), textColor, subTextColor)
+            DetailRow("TCP RTT", "${res.tcpLatencyMs ?: "-"} ms", Icons.Rounded.NetworkCheck, Color(0xFFFF9800), textColor, subTextColor)
+            DetailRow("Real Delay", "${res.realDelayMs ?: "-"} ms", Icons.Rounded.Speed, Color(0xFFE91E63), textColor, subTextColor)
+            DetailRow("TLS", tlsText, Icons.Rounded.Security, tlsColor, textColor, subTextColor)
+            DetailRow("IP خروجی", res.outputIp ?: "-", Icons.Rounded.ExitToApp, Color(0xFF795548), textColor, subTextColor)
+            DetailRow("کشور خروجی", formatCountry(res.outputCountry), Icons.Rounded.Flag, Color(0xFF3F51B5), textColor, subTextColor)
+            
+            if (pl != null) {
+                HorizontalDivider(color = dividerColor, modifier = Modifier.padding(vertical = 4.dp))
+                DetailRow("پکت‌لاس", plText, Icons.Rounded.NetworkPing, plColor, textColor, subTextColor, valueColor = plColor)
+                DetailRow("Jitter", "${pl.jitterMs ?: "-"} ms", Icons.Rounded.Timeline, Color(0xFF673AB7), textColor, subTextColor)
+                DetailRow("میانگین پینگ", "${pl.avgLatencyMs ?: "-"} ms", Icons.Rounded.Speed, Color(0xFF00BCD4), textColor, subTextColor)
             }
         }
     }
 }
 
 @Composable
-fun DetailItemCard(title: String, value: String, icon: ImageVector, color: Color, modifier: Modifier = Modifier) {
-    ElevatedCard(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+private fun DetailRow(
+    title: String,
+    value: String,
+    icon: ImageVector,
+    iconColor: Color,
+    textColor: Color,
+    subTextColor: Color,
+    valueColor: Color = textColor
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(title, fontSize = 12.sp, color = Color.Gray)
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            SelectionContainer {
-                Text(text = value, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.DarkGray, maxLines = 1)
-            }
+        Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(title, fontSize = 13.sp, color = subTextColor, modifier = Modifier.weight(1f))
+        SelectionContainer {
+            Text(value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = valueColor, maxLines = 1)
         }
     }
 }
