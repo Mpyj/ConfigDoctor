@@ -61,7 +61,6 @@ fun BatchTab(
     var healStatuses by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var showHealModeDialog by remember { mutableStateOf(false) }
 
-    // ─── فیلتر و مرتب‌سازی ───
     var filter by remember { mutableStateOf(BatchFilter.ALL) }
     var sort by remember { mutableStateOf(BatchSort.DEFAULT) }
     var searchQuery by remember { mutableStateOf("") }
@@ -76,20 +75,16 @@ fun BatchTab(
         label = "rotation"
     )
 
-    // ─── اعمال فیلتر، جستجو و مرتب‌سازی ───
     val filteredResults = remember(results, filter, sort, searchQuery) {
         var list = results
-        // فیلتر
         list = when (filter) {
             BatchFilter.HEALTHY -> list.filter { it.second?.overallStatus == OverallStatus.HEALTHY }
             BatchFilter.DEAD -> list.filter { it.second != null && it.second?.overallStatus != OverallStatus.HEALTHY }
             BatchFilter.ALL -> list
         }
-        // جستجو
         if (searchQuery.isNotBlank()) {
             list = list.filter { (link, _) -> link.contains(searchQuery, ignoreCase = true) }
         }
-        // مرتب‌سازی
         list = when (sort) {
             BatchSort.DELAY -> list.sortedBy { it.second?.realDelayMs ?: Long.MAX_VALUE }
             BatchSort.PACKET_LOSS -> list.sortedBy { it.second?.packetLoss?.lossPercent ?: Float.MAX_VALUE }
@@ -227,18 +222,34 @@ fun BatchTab(
             val deadCount = results.count { it.second?.overallStatus == OverallStatus.IP_DEAD || it.second?.overallStatus == OverallStatus.UNKNOWN }
             val snifilteredCount = results.count { it.second?.overallStatus == OverallStatus.SNI_FILTERED }
 
-            // ─── خلاصه ───
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                SummaryChip("✅ سالم", healthyCount, Color(0xFF4CAF50), if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White)
-                SummaryChip("❌ خراب", deadCount, Color(0xFFF44336), if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White)
-                SummaryChip("⚠️ SNI", snifilteredCount, Color(0xFFFFC107), if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White)
+                SummaryChip(
+                    label = "✅ سالم",
+                    count = healthyCount,
+                    color = Color(0xFF4CAF50),
+                    bg = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White,
+                    modifier = Modifier.weight(1f)
+                )
+                SummaryChip(
+                    label = "❌ خراب",
+                    count = deadCount,
+                    color = Color(0xFFF44336),
+                    bg = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White,
+                    modifier = Modifier.weight(1f)
+                )
+                SummaryChip(
+                    label = "⚠️ SNI",
+                    count = snifilteredCount,
+                    color = Color(0xFFFFC107),
+                    bg = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White,
+                    modifier = Modifier.weight(1f)
+                )
             }
             Spacer(Modifier.height(12.dp))
 
-            // ─── فیلتر ───
             ScrollableTabRow(
                 selectedTabIndex = filter.ordinal,
                 containerColor = Color.Transparent,
@@ -267,7 +278,6 @@ fun BatchTab(
 
             Spacer(Modifier.height(8.dp))
 
-            // ─── جستجو و مرتب‌سازی ───
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -302,7 +312,6 @@ fun BatchTab(
                 }
             }
 
-            // متن توضیح مرتب‌سازی فعلی
             Text(
                 text = when (sort) {
                     BatchSort.DELAY -> "مرتب‌سازی: کمترین تأخیر"
@@ -316,7 +325,6 @@ fun BatchTab(
 
             Spacer(Modifier.height(8.dp))
 
-            // ─── نتایج فیلتر شده ───
             if (filteredResults.isEmpty()) {
                 Text("نتیجه‌ای برای این فیلتر پیدا نشد.", color = subTextColor, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
             } else {
@@ -450,11 +458,17 @@ fun BatchTab(
 }
 
 @Composable
-private fun SummaryChip(label: String, count: Int, color: Color, bg: Color) {
+private fun SummaryChip(
+    label: String,
+    count: Int,
+    color: Color,
+    bg: Color,
+    modifier: Modifier = Modifier
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = bg),
         shape = RoundedCornerShape(10.dp),
-        modifier = Modifier.weight(1f)
+        modifier = modifier
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
