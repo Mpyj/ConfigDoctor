@@ -15,6 +15,8 @@ object SettingsManager {
     private val DEFAULT_HEAL_MODE = stringPreferencesKey("default_heal_mode")
     private val TEST_TIMEOUT = intPreferencesKey("test_timeout")
     private val IS_DARK_THEME = booleanPreferencesKey("is_dark_theme")
+    private val CLOUDFLARE_IPS = stringPreferencesKey("cloudflare_ips") // ← جدید
+    private val LAST_IP_UPDATE = stringPreferencesKey("last_ip_update") // ← جدید
 
     fun getDefaultHealMode(context: Context): Flow<String> =
         context.dataStore.data.map { it[DEFAULT_HEAL_MODE] ?: "DEEP" }
@@ -36,4 +38,18 @@ object SettingsManager {
     suspend fun setTheme(context: Context, isDark: Boolean) {
         context.dataStore.edit { it[IS_DARK_THEME] = isDark }
     }
+
+    // ─── IPهای کلادفلر ───
+    fun getCloudflareIps(context: Context): Flow<String?> =
+        context.dataStore.data.map { it[CLOUDFLARE_IPS] }
+
+    suspend fun setCloudflareIps(context: Context, ips: String) {
+        context.dataStore.edit {
+            it[CLOUDFLARE_IPS] = ips
+            it[LAST_IP_UPDATE] = System.currentTimeMillis().toString()
+        }
+    }
+
+    fun getLastIpUpdate(context: Context): Flow<Long> =
+        context.dataStore.data.map { it[LAST_IP_UPDATE]?.toLongOrNull() ?: 0L }
 }

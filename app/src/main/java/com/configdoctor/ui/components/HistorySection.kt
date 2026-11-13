@@ -29,6 +29,7 @@ fun HistorySection(
     val context = LocalContext.current
     val cardColor = if (isDarkTheme) Color(0xFF16213E) else Color.White
     val textColor = if (isDarkTheme) Color.White else Color.Black
+    val subTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
@@ -52,30 +53,61 @@ fun HistorySection(
             if (historyList.isEmpty()) {
                 Text("هنوز تستی انجام نشده.", color = Color.Gray)
             } else {
-                historyList.take(10).forEach { item ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = item.status, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textColor)
-                            Text(text = item.outputIp ?: "-", fontSize = 12.sp, color = Color.Gray)
-                        }
-                        Text(text = "${item.realDelayMs ?: "-"} ms", fontSize = 12.sp, color = Color.Gray)
-                        
-                        // دکمه کپی برای کانفیگ‌های سالم یا ترمیم‌شده
-                        if (item.status == "HEALTHY" || item.status == "HEALED") {
-                            IconButton(onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("history_link", item.link))
-                                Toast.makeText(context, "لینک کپی شد", Toast.LENGTH_SHORT).show()
-                            }) {
-                                Icon(Icons.Rounded.ContentCopy, contentDescription = "کپی", tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp))
+                historyList.take(15).forEach { item ->
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(text = item.status, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textColor)
+                                if (item.outputIp != null) {
+                                    Text(text = item.outputIp, fontSize = 11.sp, color = subTextColor)
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = "${item.realDelayMs ?: "-"} ms", fontSize = 12.sp, color = subTextColor)
+                                Spacer(Modifier.width(4.dp))
+                                if (item.packetLossPercent != null) {
+                                    val plColor = when {
+                                        item.packetLossPercent <= 5f -> Color(0xFF4CAF50)
+                                        item.packetLossPercent <= 20f -> Color(0xFFFFC107)
+                                        else -> Color(0xFFF44336)
+                                    }
+                                    Surface(
+                                        color = plColor.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "پکت‌لاس ${"%.0f".format(item.packetLossPercent)}%",
+                                            fontSize = 10.sp,
+                                            color = plColor,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            if (item.status == "HEALTHY" || item.status == "HEALED") {
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("history_link", item.link))
+                                        Toast.makeText(context, "لینک کپی شد", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.ContentCopy,
+                                        contentDescription = "کپی",
+                                        tint = Color(0xFF4CAF50),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }
-                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.2f))
+                    HorizontalDivider(color = Color.Gray.copy(alpha = 0.15f))
                 }
             }
         }

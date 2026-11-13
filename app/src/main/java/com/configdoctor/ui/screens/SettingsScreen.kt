@@ -1,10 +1,12 @@
 package com.configdoctor.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -14,8 +16,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.configdoctor.data.SettingsManager
+import com.configdoctor.diagnose.CloudflareCleanIps
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -24,10 +30,13 @@ fun SettingsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var healMode by remember { mutableStateOf("DEEP") }
     var timeout by remember { mutableStateOf(10000) }
+    var isUpdatingIps by remember { mutableStateOf(false) }
+    var lastUpdate by remember { mutableStateOf(0L) }
 
     LaunchedEffect(Unit) {
         healMode = SettingsManager.getDefaultHealMode(context).first()
         timeout = SettingsManager.getTestTimeout(context).first()
+        lastUpdate = SettingsManager.getLastIpUpdate(context).first()
     }
 
     Scaffold(
@@ -81,6 +90,87 @@ fun SettingsScreen(onBack: () -> Unit) {
                 steps = 26
             )
             Text("$timeout ms", fontSize = 14.sp)
+
+            Spacer(Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(24.dp))
+
+            // ─── بخش آپدیت IPهای کلادفلر ───
+            Text("IPهای کلادفلر", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "لیست IPهای تمیز برای ترمیم کانفیگ. هر چند هفته یک بار آپدیت کن.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            if (lastUpdate > 0) {
+                val dateStr = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(lastUpdate))
+                Text("آخرین آپدیت: $dateStr", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+            }
+
+            Button(
+                onClick = {
+                    isUpdatingIps = true
+                    scope.launch {
+                        // منابع پیشنهادی
+                        val sources = listOf(
+                            "https://raw.githubusercontent.com/ircfspace/cf-ip-scanner/main/ip.txt",
+                            "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Cloudflare.txt"
+                        )
+                        var success = false
+                        for (url in sources) {
+                            val result = CloudflareCleanIps.fetchFromSource(url)
+                            if (result.isSuccess) {
+                                val ips = result.getOrNull() ?: emptyList()
+                                if (ips.isNotEmpty()) {
+                                    SettingsManager.setCloudflareIps(context, ips.joinToString("\n"))
+                                    lastUpdate = System.currentTimeMillis()
+                                    success = true
+                                    Toast.makeText(context, "✅ ${ips.size} IP آپدیت شد", Toast.LENGTH_SHORT).show()
+                                    break
+                                }
+                            }
+                        }
+                        if (!success) {
+                            Toast.makeText(context, "❌ آپدیت ناموفق. اتصال اینترنت را چک کن.", Toast.LENGTH_LONG).show()
+                        }
+                        isUpdatingIps = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isUpdatingIps
+            ) {
+                if (isUpdatingIps) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("در حال آپدیت...")
+                } else {
+                    Icon(Icons.Rounded.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("آپدیت لیست IPها")
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        SettingsManager.setCloudflareIps(context, "")
+                        lastUpdate = 0L
+                        Toast.makeText(context, "لیست به حالت پیش‌فرض برگشت", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("بازگشت به لیست پیش‌فرض")
+            }
         }
     }
 }

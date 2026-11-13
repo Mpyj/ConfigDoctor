@@ -37,6 +37,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.URL
 
+enum class BatchFilter { ALL, HEALTHY, DEAD }
+enum class BatchSort { DEFAULT, DELAY, PACKET_LOSS }
+
 @Composable
 fun BatchTab(
     activity: MainActivity,
@@ -58,6 +61,11 @@ fun BatchTab(
     var healStatuses by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var showHealModeDialog by remember { mutableStateOf(false) }
 
+    // ─── فیلتر و مرتب‌سازی ───
+    var filter by remember { mutableStateOf(BatchFilter.ALL) }
+    var sort by remember { mutableStateOf(BatchSort.DEFAULT) }
+    var searchQuery by remember { mutableStateOf("") }
+
     val textColor = if (isDarkTheme) Color.White else Color.Black
     val subTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
 
@@ -68,7 +76,28 @@ fun BatchTab(
         label = "rotation"
     )
 
-    // دریافت ساب
+    // ─── اعمال فیلتر، جستجو و مرتب‌سازی ───
+    val filteredResults = remember(results, filter, sort, searchQuery) {
+        var list = results
+        // فیلتر
+        list = when (filter) {
+            BatchFilter.HEALTHY -> list.filter { it.second?.overallStatus == OverallStatus.HEALTHY }
+            BatchFilter.DEAD -> list.filter { it.second != null && it.second?.overallStatus != OverallStatus.HEALTHY }
+            BatchFilter.ALL -> list
+        }
+        // جستجو
+        if (searchQuery.isNotBlank()) {
+            list = list.filter { (link, _) -> link.contains(searchQuery, ignoreCase = true) }
+        }
+        // مرتب‌سازی
+        list = when (sort) {
+            BatchSort.DELAY -> list.sortedBy { it.second?.realDelayMs ?: Long.MAX_VALUE }
+            BatchSort.PACKET_LOSS -> list.sortedBy { it.second?.packetLoss?.lossPercent ?: Float.MAX_VALUE }
+            BatchSort.DEFAULT -> list
+        }
+        list
+    }
+
     val fetchSubscription: () -> Unit = {
         isFetchingSub = true
         scope.launch {
@@ -95,7 +124,6 @@ fun BatchTab(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // ورودی ساب
         OutlinedTextField(
             value = subUrl,
             onValueChange = { subUrl = it },
@@ -109,7 +137,7 @@ fun BatchTab(
                 }
             }
         )
-        
+
         Spacer(Modifier.height(12.dp))
         Text("یا لینک‌ها را دستی وارد کنید:", fontSize = 12.sp, color = subTextColor)
 
@@ -123,7 +151,6 @@ fun BatchTab(
 
         Spacer(Modifier.height(16.dp))
 
-        // نوار وضعیت (تست یا ترمیم)
         AnimatedVisibility(visible = isTesting || isHealing || isFetchingSub) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
@@ -149,7 +176,6 @@ fun BatchTab(
             }
         }
 
-        // دکمه شروع تست
         Button(
             onClick = {
                 progressPercentage = 0f
@@ -199,55 +225,144 @@ fun BatchTab(
         if (results.isNotEmpty()) {
             val healthyCount = results.count { it.second?.overallStatus == OverallStatus.HEALTHY }
             val deadCount = results.count { it.second?.overallStatus == OverallStatus.IP_DEAD || it.second?.overallStatus == OverallStatus.UNKNOWN }
+            val snifilteredCount = results.count { it.second?.overallStatus == OverallStatus.SNI_FILTERED }
 
-            Text("خلاصه: سالم $healthyCount | خراب $deadCount | کل ${results.size}", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textColor)
-            Spacer(modifier = Modifier.height(8.dp))
+            // ─── خلاصه ───
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                SummaryChip("✅ سالم", healthyCount, Color(0xFF4CAF50), if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White)
+                SummaryChip("❌ خراب", deadCount, Color(0xFFF44336), if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White)
+                SummaryChip("⚠️ SNI", snifilteredCount, Color(0xFFFFC107), if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White)
+            }
+            Spacer(Modifier.height(12.dp))
 
-            // نمایش کارت‌ها + استاتوس ترمیم
-            results.forEach { (link, result) ->
-                val statusText = healStatuses[link]
-                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    if (result != null) {
-                        CompactResultCard(
-                            result = result,
-                            isDarkTheme = isDarkTheme,
-                            onCopy = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("config_link", ConfigParserFactory.buildLink(result.config)))
-                                Toast.makeText(context, "لینک کپی شد", Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    } else {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F).copy(alpha = 0.1f)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("خطا در پارس: ${link.take(30)}...", color = Color.Red, fontSize = 12.sp)
+            // ─── فیلتر ───
+            ScrollableTabRow(
+                selectedTabIndex = filter.ordinal,
+                containerColor = Color.Transparent,
+                contentColor = Color(0xFF6C63FF),
+                edgePadding = 0.dp,
+                divider = {}
+            ) {
+                BatchFilter.entries.forEach { f ->
+                    Tab(
+                        selected = filter == f,
+                        onClick = { filter = f },
+                        text = {
+                            Text(
+                                when (f) {
+                                    BatchFilter.ALL -> "همه (${results.size})"
+                                    BatchFilter.HEALTHY -> "سالم ($healthyCount)"
+                                    BatchFilter.DEAD -> "خراب (${deadCount + snifilteredCount})"
+                                },
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // ─── جستجو و مرتب‌سازی ───
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("جستجو...", fontSize = 12.sp, color = subTextColor) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = subTextColor, modifier = Modifier.size(18.dp)) },
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF6C63FF), unfocusedBorderColor = subTextColor.copy(alpha = 0.3f), focusedTextColor = textColor, unfocusedTextColor = textColor)
+                )
+                IconButton(onClick = {
+                    sort = when (sort) {
+                        BatchSort.DEFAULT -> BatchSort.DELAY
+                        BatchSort.DELAY -> BatchSort.PACKET_LOSS
+                        BatchSort.PACKET_LOSS -> BatchSort.DEFAULT
+                    }
+                }) {
+                    Icon(
+                        when (sort) {
+                            BatchSort.DELAY -> Icons.Rounded.Speed
+                            BatchSort.PACKET_LOSS -> Icons.Rounded.NetworkPing
+                            else -> Icons.Rounded.Sort
+                        },
+                        contentDescription = "مرتب‌سازی",
+                        tint = Color(0xFF6C63FF)
+                    )
+                }
+            }
+
+            // متن توضیح مرتب‌سازی فعلی
+            Text(
+                text = when (sort) {
+                    BatchSort.DELAY -> "مرتب‌سازی: کمترین تأخیر"
+                    BatchSort.PACKET_LOSS -> "مرتب‌سازی: کمترین پکت‌لاس"
+                    BatchSort.DEFAULT -> "مرتب‌سازی: ترتیب اصلی"
+                },
+                fontSize = 10.sp,
+                color = subTextColor,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // ─── نتایج فیلتر شده ───
+            if (filteredResults.isEmpty()) {
+                Text("نتیجه‌ای برای این فیلتر پیدا نشد.", color = subTextColor, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
+            } else {
+                filteredResults.forEach { (link, result) ->
+                    val statusText = healStatuses[link]
+                    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        if (result != null) {
+                            CompactResultCard(
+                                result = result,
+                                isDarkTheme = isDarkTheme,
+                                onCopy = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("config_link", ConfigParserFactory.buildLink(result.config)))
+                                    Toast.makeText(context, "لینک کپی شد", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        } else {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F).copy(alpha = 0.1f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Rounded.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("خطا در پارس: ${link.take(30)}...", color = Color.Red, fontSize = 12.sp)
+                                }
                             }
                         }
-                    }
-                    
-                    // نمایش استاتوس ترمیم زنده
-                    if (statusText != null) {
-                        Text(
-                            text = statusText,
-                            fontSize = 11.sp,
-                            color = if (statusText.startsWith("✅")) Color(0xFF4CAF50)
-                                   else if (statusText.startsWith("❌")) Color(0xFFF44336)
-                                   else Color(0xFFFFC107),
-                            modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 4.dp)
-                        )
+
+                        if (statusText != null) {
+                            Text(
+                                text = statusText,
+                                fontSize = 11.sp,
+                                color = if (statusText.startsWith("✅")) Color(0xFF4CAF50)
+                                       else if (statusText.startsWith("❌")) Color(0xFFF44336)
+                                       else Color(0xFFFFC107),
+                                modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 4.dp)
+                            )
+                        }
                     }
                 }
             }
 
             Spacer(Modifier.height(16.dp))
 
-            // دکمه ترمیم گروهی
             Button(
                 onClick = {
                     healStatuses = emptyMap()
@@ -262,28 +377,26 @@ fun BatchTab(
 
             Spacer(Modifier.height(8.dp))
 
-            // دکمه کپی همه
             OutlinedButton(
                 onClick = {
-                    val allLinks = results.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
+                    val allLinks = filteredResults.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("batch_links", allLinks))
-                    Toast.makeText(context, "همه لینک‌ها کپی شدند", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "${filteredResults.size} لینک کپی شدند", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.fillMaxWidth(),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6C63FF))
             ) {
                 Icon(Icons.Rounded.ContentCopy, contentDescription = null, tint = Color(0xFF6C63FF))
                 Spacer(Modifier.width(8.dp))
-                Text("کپی همه لینک‌ها", color = Color(0xFF6C63FF))
+                Text("کپی نتایج فیلتر شده (${filteredResults.size})", color = Color(0xFF6C63FF))
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // دکمه اشتراک‌گذاری Base64
             OutlinedButton(
                 onClick = {
-                    val allLinks = results.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
+                    val allLinks = filteredResults.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
                     val base64Sub = Base64.encodeToString(allLinks.toByteArray(), Base64.NO_WRAP)
                     val intent = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
@@ -296,12 +409,11 @@ fun BatchTab(
             ) {
                 Icon(Icons.Rounded.Share, contentDescription = null, tint = Color(0xFF6C63FF))
                 Spacer(Modifier.width(8.dp))
-                Text("اشتراک‌گذاری به صورت ساب (Base64)", color = Color(0xFF6C63FF))
+                Text("اشتراک‌گذاری نتایج فیلتر شده (Base64)", color = Color(0xFF6C63FF))
             }
         }
     }
 
-    // دیالوگ انتخاب حالت ترمیم
     if (showHealModeDialog) {
         AlertDialog(
             onDismissRequest = { showHealModeDialog = false },
@@ -337,6 +449,23 @@ fun BatchTab(
     }
 }
 
+@Composable
+private fun SummaryChip(label: String, count: Int, color: Color, bg: Color) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = bg),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier.weight(1f)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("$count", color = color, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(label, color = color.copy(alpha = 0.8f), fontSize = 10.sp)
+        }
+    }
+}
+
 private fun executeHealBatch(
     activity: MainActivity,
     currentResults: List<Pair<String, DiagnosisResult?>>,
@@ -357,22 +486,32 @@ private fun executeHealBatch(
         val healedPairs = Diagnostician.healBatch(activity, configsToHeal, mode) { progress, percent ->
             onProgress(progress, percent)
         }
-        
+
         var configIndex = 0
         val newResults = currentResults.map { pair ->
             val originalLink = pair.first
             if (pair.second != null) {
                 current++
                 onStatusUpdate(originalLink, "⏳ در حال ترمیم...")
-                
+
                 val percent = current.toFloat() / total.toFloat()
                 onProgress("ترمیم ${current} از ${total}...", percent)
-                
+
                 val healed = healedPairs[configIndex].second
                 configIndex++
                 if (healed != null) {
                     val newDiag = Diagnostician.diagnose(activity, healed)
-                    historyDao.insert(HistoryEntity(link = ConfigParserFactory.buildLink(healed), timestamp = System.currentTimeMillis(), status = "HEALED", outputIp = newDiag.outputIp, outputCountry = newDiag.outputCountry, realDelayMs = newDiag.realDelayMs))
+                    historyDao.insert(HistoryEntity(
+                        link = ConfigParserFactory.buildLink(healed),
+                        timestamp = System.currentTimeMillis(),
+                        status = "HEALED",
+                        outputIp = newDiag.outputIp,
+                        outputCountry = newDiag.outputCountry,
+                        realDelayMs = newDiag.realDelayMs,
+                        packetLossPercent = newDiag.packetLoss?.lossPercent,
+                        jitterMs = newDiag.packetLoss?.jitterMs,
+                        avgPingMs = newDiag.packetLoss?.avgLatencyMs
+                    ))
                     onStatusUpdate(originalLink, "✅ ترمیم شد (${newDiag.realDelayMs ?: "-"}ms)")
                     originalLink to newDiag
                 } else {

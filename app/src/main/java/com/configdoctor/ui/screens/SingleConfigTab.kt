@@ -46,6 +46,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
     var healingProgressList by remember { mutableStateOf<List<String>>(emptyList()) }
     var showHealDialog by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
+    var showQrScanner by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val context = activity.applicationContext
@@ -69,7 +70,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
     val textColor = if (isDarkTheme) Color.White else Color.Black
     val subTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
 
-    // تابع کمکی برای اضافه کردن به لیست progress (حداکثر ۵ تا)
     fun addProgress(msg: String) {
         scope.launch(Dispatchers.Main) {
             healingProgressList = (healingProgressList + msg).takeLast(5)
@@ -103,6 +103,15 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 3,
                     shape = RoundedCornerShape(12.dp),
+                    trailingIcon = {
+                        IconButton(onClick = { showQrScanner = true }) {
+                            Icon(
+                                Icons.Rounded.QrCodeScanner,
+                                contentDescription = "اسکن QR",
+                                tint = Color(0xFF6C63FF)
+                            )
+                        }
+                    },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Color(0xFF6C63FF),
                         unfocusedBorderColor = subTextColor.copy(alpha = 0.3f),
@@ -135,7 +144,17 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                             try {
                                 val diag = Diagnostician.diagnose(activity, config)
                                 diagnosisResult = diag
-                                historyDao.insert(HistoryEntity(link = link, timestamp = System.currentTimeMillis(), status = diag.overallStatus.name, outputIp = diag.outputIp, outputCountry = diag.outputCountry, realDelayMs = diag.realDelayMs))
+                                historyDao.insert(HistoryEntity(
+                                    link = link,
+                                    timestamp = System.currentTimeMillis(),
+                                    status = diag.overallStatus.name,
+                                    outputIp = diag.outputIp,
+                                    outputCountry = diag.outputCountry,
+                                    realDelayMs = diag.realDelayMs,
+                                    packetLossPercent = diag.packetLoss?.lossPercent,
+                                    jitterMs = diag.packetLoss?.jitterMs,
+                                    avgPingMs = diag.packetLoss?.avgLatencyMs
+                                ))
                             } catch (e: Exception) {
                                 errorText = "خطا در تشخیص: ${e.message}"
                             }
@@ -157,7 +176,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             Text(if (isLoading) "در حال بررسی..." else "شروع تشخیص", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
 
-        // دکمه تاریخچه — فقط اگه تاریخچه خالی نباشه
         if (historyList.isNotEmpty()) {
             OutlinedButton(
                 onClick = { showHistory = !showHistory },
@@ -181,7 +199,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // خطا
         AnimatedVisibility(visible = errorText != null) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F)),
@@ -196,7 +213,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             }
         }
 
-        // Empty State
         AnimatedVisibility(visible = diagnosisResult == null && !isLoading && errorText == null) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
@@ -210,7 +226,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             }
         }
 
-        // نتیجه
         AnimatedVisibility(visible = diagnosisResult != null) {
             Column {
                 val res = diagnosisResult!!
@@ -235,7 +250,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                         Text("کپی", color = Color(0xFF6C63FF))
                     }
 
-                    // دکمه ترمیم برای همه‌ی وضعیت‌های غیر HEALTHY
                     if (res.overallStatus != OverallStatus.HEALTHY) {
                         Button(
                             onClick = { showHealDialog = true },
@@ -255,7 +269,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     }
                 }
 
-                // Progress به صورت لیست آخرین ۵ پیام
                 AnimatedVisibility(visible = isHealing && healingProgressList.isNotEmpty()) {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
@@ -278,7 +291,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             }
         }
 
-        // لینک ترمیم شده
         AnimatedVisibility(visible = healedLink != null) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
@@ -315,7 +327,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         Spacer(modifier = Modifier.height(24.dp))
     }
 
-    // دیالوگ ترمیم
     if (showHealDialog && diagnosisResult != null) {
         HealModeDialog(
             onDismiss = { showHealDialog = false },
@@ -329,7 +340,17 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.QUICK) { p -> addProgress(p) }
                     if (healedConfig != null) {
                         healedLink = ConfigParserFactory.buildLink(healedConfig)
-                        historyDao.insert(HistoryEntity(link = healedLink!!, timestamp = System.currentTimeMillis(), status = "HEALED", outputIp = res.outputIp, outputCountry = res.outputCountry, realDelayMs = res.realDelayMs))
+                        historyDao.insert(HistoryEntity(
+                            link = healedLink!!,
+                            timestamp = System.currentTimeMillis(),
+                            status = "HEALED",
+                            outputIp = res.outputIp,
+                            outputCountry = res.outputCountry,
+                            realDelayMs = res.realDelayMs,
+                            packetLossPercent = res.packetLoss?.lossPercent,
+                            jitterMs = res.packetLoss?.jitterMs,
+                            avgPingMs = res.packetLoss?.avgLatencyMs
+                        ))
                     } else { errorText = "مسیر سالمی پیدا نشد." }
                     isHealing = false
                 }
@@ -344,10 +365,30 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.DEEP) { p -> addProgress(p) }
                     if (healedConfig != null) {
                         healedLink = ConfigParserFactory.buildLink(healedConfig)
-                        historyDao.insert(HistoryEntity(link = healedLink!!, timestamp = System.currentTimeMillis(), status = "HEALED", outputIp = res.outputIp, outputCountry = res.outputCountry, realDelayMs = res.realDelayMs))
+                        historyDao.insert(HistoryEntity(
+                            link = healedLink!!,
+                            timestamp = System.currentTimeMillis(),
+                            status = "HEALED",
+                            outputIp = res.outputIp,
+                            outputCountry = res.outputCountry,
+                            realDelayMs = res.realDelayMs,
+                            packetLossPercent = res.packetLoss?.lossPercent,
+                            jitterMs = res.packetLoss?.jitterMs,
+                            avgPingMs = res.packetLoss?.avgLatencyMs
+                        ))
                     } else { errorText = "مسیر سالمی پیدا نشد." }
                     isHealing = false
                 }
+            }
+        )
+    }
+
+    if (showQrScanner) {
+        QrScannerDialog(
+            onDismiss = { showQrScanner = false },
+            onResult = { scannedLink ->
+                link = scannedLink
+                Toast.makeText(context, "کانفیگ اسکن شد", Toast.LENGTH_SHORT).show()
             }
         )
     }

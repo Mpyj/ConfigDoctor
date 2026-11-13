@@ -49,9 +49,6 @@ object Diagnostician {
         DEEP
     }
 
-    // ─────────────────────────────
-    // ۱) تشخیص وضعیت کانفیگ (تک)
-    // ─────────────────────────────
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
         val (serverType, resolvedIp) = ServerTypeDetector.detect(config.address)
         val tcp = TcpTester.test(config.address, config.port)
@@ -79,7 +76,6 @@ object Diagnostician {
 
         val realDelay = XrayRealDelayTester.test(context, config)
 
-        // تست پکت‌لاس فقط برای کانفیگ‌های سالم
         val packetLoss = if (realDelay.ok) {
             PacketLossTester.test(
                 address = config.address,
@@ -140,9 +136,6 @@ object Diagnostician {
         )
     }
 
-    // ─────────────────────────────
-    // ۲) ترمیم کانفیگ (چهار مرحله‌ای با موازی‌سازی)
-    // ─────────────────────────────
     suspend fun healConfig(
         context: Context,
         config: VlessConfig,
@@ -151,9 +144,8 @@ object Diagnostician {
     ): VlessConfig? = withContext(Dispatchers.IO) {
         val baseConfig = if (config.port <= 0) config.copy(port = 443) else config
 
-        // ── مرحله ۱: تولید IPها و تست TCP (موازی با محدودیت ۱۰) ──
         onProgress("تولید IPهای جدید...")
-        val randomIps = CloudflareCleanIps.generateRandomIps(100)
+        val randomIps = CloudflareCleanIps.generateRandomIpsFromStorage(context, 100)
 
         val ipv6Candidates = randomIps.filter { it.contains(":") }
         val ipv4Candidates = randomIps.filter { it.contains(".") }
@@ -182,13 +174,11 @@ object Diagnostician {
             return@withContext null
         }
 
-        // حالت QUICK: اگه اولین IP سالم کافیه، همون رو برگردون
         if (mode == HealMode.QUICK) {
             onProgress("حالت سریع: اولین IP سالم پیدا شد.")
             return@withContext baseConfig.copy(address = tcpPassed.first())
         }
 
-        // ── مرحله ۲: تست Real Delay (موازی با محدودیت ۵) ──
         val toTestRealDelay = tcpPassed.take(20)
         onProgress("مرحله ۲: تست Real Delay روی ${toTestRealDelay.size} IP (موازی)...")
         val rdCounter = AtomicInteger(0)
@@ -215,7 +205,6 @@ object Diagnostician {
             return@withContext null
         }
 
-        // ── مرحله ۳: تست پایداری روی ۳ کاندیدای برتر (موازی) ──
         val topCandidates = realDelayPassed.sortedBy { it.realDelayMs }.take(3)
         onProgress("مرحله ۳: تست پایداری روی ${topCandidates.size} کاندیدای برتر (موازی)...")
 
@@ -254,7 +243,6 @@ object Diagnostician {
         val bestStableConfig = stableCandidates.minByOrNull { it.avgDelay!! }?.config
         val bestAvgDelay = stableCandidates.minByOrNull { it.avgDelay!! }?.avgDelay ?: Long.MAX_VALUE
 
-        // ── مرحله ۴: تست پکت‌لاس روی ۳ کاندیدای برتر (موازی) ──
         onProgress("مرحله ۴: تست پکت‌لاس روی ${topCandidates.size} کاندیدای برتر (موازی)...")
 
         val packetLossPassed = coroutineScope {
@@ -297,9 +285,6 @@ object Diagnostician {
         return@withContext bestStableConfig
     }
 
-    // ─────────────────────────────
-    // ۳) تست گروهی (موازی با محدودیت ۵)
-    // ─────────────────────────────
     suspend fun diagnoseBatch(
         context: Context,
         links: List<String>,
@@ -309,7 +294,7 @@ object Diagnostician {
         if (total == 0) return@withContext emptyList()
 
         val completed = AtomicInteger(0)
-        val semaphore = Semaphore(5)  // حداکثر ۵ تست همزمان
+        val semaphore = Semaphore(5)
 
         coroutineScope {
             links.mapIndexed { index, link ->
@@ -342,9 +327,6 @@ object Diagnostician {
         }
     }
 
-    // ─────────────────────────────
-    // ۴) ترمیم گروهی (موازی با محدودیت ۳)
-    // ─────────────────────────────
     suspend fun healBatch(
         context: Context,
         configs: List<VlessConfig>,
@@ -355,7 +337,7 @@ object Diagnostician {
         if (total == 0) return@withContext emptyList()
 
         val completed = AtomicInteger(0)
-        val semaphore = Semaphore(3)  // حداکثر ۳ ترمیم همزمان (heal سنگینه)
+        val semaphore = Semaphore(3)
 
         coroutineScope {
             configs.mapIndexed { index, config ->
@@ -387,7 +369,6 @@ object Diagnostician {
     }
 }
 
-// توابع کمکی برای نمایش کشور و پرچم
 fun formatCountry(code: String?): String {
     if (code.isNullOrBlank()) return "-"
     val name = when (code.uppercase()) {
