@@ -24,23 +24,24 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
-        
+
         create("release") {
-            storeFile = file("${rootDir}/release.keystore")
-            storePassword = "YOUR_RELEASE_PASSWORD"
-            keyAlias = "configdoctor"
-            keyPassword = "YOUR_RELEASE_PASSWORD"
+            val keystorePath = System.getenv("KEYSTORE_PATH")
+                ?: file("${rootDir}/configdoctor-release.jks").absolutePath
+            storeFile = file(keystorePath)
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "local_fallback"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "configdoctor"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "local_fallback"
         }
     }
 
     buildTypes {
         debug {
-            // راه‌حل بلندمدت: استفاده از کلید Release برای دیباگ
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             isShrinkResources = false
         }
-        
+
         release {
             signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
@@ -67,7 +68,7 @@ android {
             isUniversalApk = true
         }
     }
-    
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

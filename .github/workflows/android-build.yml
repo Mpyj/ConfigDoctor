@@ -31,85 +31,87 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      # ─── رمزگشایی keystore از Secrets ───
+      - name: Decode Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/configdoctor-release.jks
+
+      # ─── بیلد دیباگ ───
       - name: Build Debug APKs
         run: gradle assembleDebug
 
+      # ─── بیلد ریلیز (با keystore واقعی) ───
       - name: Build Release APKs
         run: gradle assembleRelease
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/configdoctor-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       # --- آپلود جداگانه‌ی هر APK دیباگ ---
       - name: Upload Debug APK (arm64-v8a)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: debug-arm64-v8a
           path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-          archive: false
 
       - name: Upload Debug APK (armeabi-v7a)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: debug-armeabi-v7a
           path: app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
-          archive: false
 
       - name: Upload Debug APK (x86)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: debug-x86
           path: app/build/outputs/apk/debug/app-x86-debug.apk
-          archive: false
 
       - name: Upload Debug APK (x86_64)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: debug-x86_64
           path: app/build/outputs/apk/debug/app-x86_64-debug.apk
-          archive: false
 
       - name: Upload Debug APK (Universal)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: debug-universal
           path: app/build/outputs/apk/debug/app-universal-debug.apk
-          archive: false
 
       # --- آپلود جداگانه‌ی هر APK ریلیز ---
       - name: Upload Release APK (arm64-v8a)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: release-arm64-v8a
           path: app/build/outputs/apk/release/app-arm64-v8a-release.apk
-          archive: false
 
       - name: Upload Release APK (armeabi-v7a)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: release-armeabi-v7a
           path: app/build/outputs/apk/release/app-armeabi-v7a-release.apk
-          archive: false
 
       - name: Upload Release APK (x86)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: release-x86
           path: app/build/outputs/apk/release/app-x86-release.apk
-          archive: false
 
       - name: Upload Release APK (x86_64)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: release-x86_64
           path: app/build/outputs/apk/release/app-x86_64-release.apk
-          archive: false
 
       - name: Upload Release APK (Universal)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: release-universal
           path: app/build/outputs/apk/release/app-universal-release.apk
-          archive: false
 
-      # --- انتشار در Releases (همه‌ی فایل‌ها یک‌جا) ---
+      # --- انتشار در Releases ---
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
@@ -118,14 +120,15 @@ jobs:
           name: Config Doctor v0.1.0-${{ github.run_number }}
           body: |
             🚀 نسخه جدید Config Doctor
-            
+
             **قابلیت‌ها:**
             - تشخیص خودکار مشکلات کانفیگ (TCP, TLS, Real Delay)
-            - ترمیم خودکار IP سوخته (Auto-Heal)
+            - ترمیم خودکار IP سوخته (Auto-Heal) با ۴ مرحله (TCP، Real Delay، پایداری، پکت‌لاس)
             - پشتیبانی از VLESS, VMess, Trojan
             - نمایش IP و کشور خروجی
+            - نمایش پکت‌لاس، جیتر و میانگین پینگ
             - تاریخچه تست‌ها
-            
+
             **فایل‌های APK:**
             - `app-arm64-v8a-release.apk` (برای اکثر گوشی‌های مدرن)
             - `app-armeabi-v7a-release.apk` (برای گوشی‌های قدیمی‌تر)
