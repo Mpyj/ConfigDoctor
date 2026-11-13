@@ -20,11 +20,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.configdoctor.MainActivity
+import com.configdoctor.R
 import com.configdoctor.data.AppDatabase
 import com.configdoctor.data.HistoryEntity
 import com.configdoctor.diagnose.DiagnosisResult
@@ -47,6 +49,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
     var showHealDialog by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
     var showQrScanner by remember { mutableStateOf(false) }
+    var showHealTutorial by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val context = activity.applicationContext
@@ -58,12 +61,8 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
 
     val infiniteTransition = rememberInfiniteTransition(label = "loading")
     val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(animation = tween(1500, easing = LinearEasing), repeatMode = RepeatMode.Restart),
         label = "rotation"
     )
 
@@ -77,10 +76,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(16.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(scrollState).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(16.dp))
@@ -89,12 +85,10 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.elevatedCardColors(
-                containerColor = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White
-            )
+            colors = CardDefaults.elevatedCardColors(containerColor = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text("لینک کانفیگ", fontSize = 14.sp, color = subTextColor, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.config_link), fontSize = 14.sp, color = subTextColor, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = link,
@@ -105,11 +99,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     shape = RoundedCornerShape(12.dp),
                     trailingIcon = {
                         IconButton(onClick = { showQrScanner = true }) {
-                            Icon(
-                                Icons.Rounded.QrCodeScanner,
-                                contentDescription = "اسکن QR",
-                                tint = Color(0xFF6C63FF)
-                            )
+                            Icon(Icons.Rounded.QrCodeScanner, contentDescription = "QR", tint = Color(0xFF6C63FF))
                         }
                     },
                     colors = OutlinedTextFieldDefaults.colors(
@@ -129,7 +119,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         Button(
             onClick = {
                 if (link.isBlank()) {
-                    errorText = "لطفاً یه لینک وارد کن"
+                    errorText = "Link is empty"
                     return@Button
                 }
                 isLoading = true
@@ -145,21 +135,13 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                                 val diag = Diagnostician.diagnose(activity, config)
                                 diagnosisResult = diag
                                 historyDao.insert(HistoryEntity(
-                                    link = link,
-                                    timestamp = System.currentTimeMillis(),
-                                    status = diag.overallStatus.name,
-                                    outputIp = diag.outputIp,
-                                    outputCountry = diag.outputCountry,
-                                    realDelayMs = diag.realDelayMs,
-                                    packetLossPercent = diag.packetLoss?.lossPercent,
-                                    jitterMs = diag.packetLoss?.jitterMs,
-                                    avgPingMs = diag.packetLoss?.avgLatencyMs
+                                    link = link, timestamp = System.currentTimeMillis(), status = diag.overallStatus.name,
+                                    outputIp = diag.outputIp, outputCountry = diag.outputCountry, realDelayMs = diag.realDelayMs,
+                                    packetLossPercent = diag.packetLoss?.lossPercent, jitterMs = diag.packetLoss?.jitterMs, avgPingMs = diag.packetLoss?.avgLatencyMs
                                 ))
-                            } catch (e: Exception) {
-                                errorText = "خطا در تشخیص: ${e.message}"
-                            }
+                            } catch (e: Exception) { errorText = "Error: ${e.message}" }
                         },
-                        onFailure = { errorText = "خطا در پارس لینک: ${it.message}" }
+                        onFailure = { errorText = "Parse error: ${it.message}" }
                     )
                     isLoading = false
                 }
@@ -173,9 +155,10 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                 Icon(Icons.Rounded.Autorenew, contentDescription = null, modifier = Modifier.size(24.dp).rotate(rotation))
                 Spacer(Modifier.width(8.dp))
             }
-            Text(if (isLoading) "در حال بررسی..." else "شروع تشخیص", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text(if (isLoading) stringResource(R.string.diagnosing) else stringResource(R.string.start_diagnose), fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
 
+        // دکمه تاریخچه
         if (historyList.isNotEmpty()) {
             OutlinedButton(
                 onClick = { showHistory = !showHistory },
@@ -185,26 +168,18 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             ) {
                 Icon(Icons.Rounded.History, contentDescription = null, tint = textColor)
                 Spacer(Modifier.width(8.dp))
-                Text(if (showHistory) "بستن تاریخچه" else "نمایش تاریخچه (${historyList.size})", color = textColor)
+                Text(if (showHistory) stringResource(R.string.hide_history) else stringResource(R.string.show_history, historyList.size), color = textColor)
             }
         }
 
         AnimatedVisibility(visible = showHistory) {
-            HistorySection(
-                historyList = historyList,
-                onClear = { scope.launch { historyDao.clearAll() } },
-                isDarkTheme = isDarkTheme
-            )
+            HistorySection(historyList = historyList, onClear = { scope.launch { historyDao.clearAll() } }, isDarkTheme = isDarkTheme)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
         AnimatedVisibility(visible = errorText != null) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F)),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            ) {
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F)), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.Error, contentDescription = null, tint = Color.White)
                     Spacer(modifier = Modifier.width(8.dp))
@@ -214,15 +189,12 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         }
 
         AnimatedVisibility(visible = diagnosisResult == null && !isLoading && errorText == null) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Rounded.Troubleshoot, contentDescription = null, modifier = Modifier.size(100.dp), tint = subTextColor.copy(alpha = 0.3f))
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("آماده برای تشخیص", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = subTextColor)
+                Text(stringResource(R.string.ready_to_diagnose), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = subTextColor)
                 Spacer(modifier = Modifier.height(8.dp))
-                Text("لینک کانفیگ خود را وارد کنید تا\nوضعیت سلامت آن را بررسی کنیم.", textAlign = TextAlign.Center, fontSize = 14.sp, color = subTextColor.copy(alpha = 0.7f))
+                Text(stringResource(R.string.ready_desc), textAlign = TextAlign.Center, fontSize = 14.sp, color = subTextColor.copy(alpha = 0.7f))
             }
         }
 
@@ -239,7 +211,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("result", res.summary))
-                            Toast.makeText(context, "گزارش کپی شد", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = RoundedCornerShape(12.dp),
@@ -247,7 +219,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     ) {
                         Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp), tint = Color(0xFF6C63FF))
                         Spacer(Modifier.width(4.dp))
-                        Text("کپی", color = Color(0xFF6C63FF))
+                        Text(stringResource(R.string.copy), color = Color(0xFF6C63FF))
                     }
 
                     if (res.overallStatus != OverallStatus.HEALTHY) {
@@ -263,7 +235,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                             } else {
                                 Icon(Icons.Rounded.Build, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("ترمیم")
+                                Text(stringResource(R.string.heal))
                             }
                         }
                     }
@@ -279,12 +251,10 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF6C63FF), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("در حال ترمیم...", fontWeight = FontWeight.Bold, color = textColor)
+                                Text(stringResource(R.string.healing), fontWeight = FontWeight.Bold, color = textColor)
                             }
                             Spacer(modifier = Modifier.height(6.dp))
-                            healingProgressList.forEach { p ->
-                                Text("• $p", fontSize = 11.sp, color = subTextColor, lineHeight = 16.sp)
-                            }
+                            healingProgressList.forEach { p -> Text("• $p", fontSize = 11.sp, color = subTextColor, lineHeight = 16.sp) }
                         }
                     }
                 }
@@ -301,25 +271,23 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("ترمیم موفق!", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(stringResource(R.string.heal_success), fontWeight = FontWeight.Bold, color = Color.White)
                     }
                     Spacer(modifier = Modifier.height(12.dp))
                     Surface(color = Color.White.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        SelectionContainer {
-                            Text(text = healedLink ?: "", fontSize = 12.sp, color = Color.White, modifier = Modifier.padding(8.dp))
-                        }
+                        SelectionContainer { Text(text = healedLink ?: "", fontSize = 12.sp, color = Color.White, modifier = Modifier.padding(8.dp)) }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("healed_link", healedLink))
-                            Toast.makeText(context, "لینک کپی شد", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White)
                     ) {
-                        Text("کپی لینک جدید", color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.copy_new_link), color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -331,52 +299,26 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         HealModeDialog(
             onDismiss = { showHealDialog = false },
             onQuick = {
-                showHealDialog = false
-                isHealing = true
-                healingProgressList = emptyList()
-                addProgress("شروع ترمیم (سریع)...")
+                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("Start (Quick)...")
                 scope.launch {
                     val res = diagnosisResult!!
                     val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.QUICK) { p -> addProgress(p) }
                     if (healedConfig != null) {
                         healedLink = ConfigParserFactory.buildLink(healedConfig)
-                        historyDao.insert(HistoryEntity(
-                            link = healedLink!!,
-                            timestamp = System.currentTimeMillis(),
-                            status = "HEALED",
-                            outputIp = res.outputIp,
-                            outputCountry = res.outputCountry,
-                            realDelayMs = res.realDelayMs,
-                            packetLossPercent = res.packetLoss?.lossPercent,
-                            jitterMs = res.packetLoss?.jitterMs,
-                            avgPingMs = res.packetLoss?.avgLatencyMs
-                        ))
-                    } else { errorText = "مسیر سالمی پیدا نشد." }
+                        historyDao.insert(HistoryEntity(link = healedLink!!, timestamp = System.currentTimeMillis(), status = "HEALED", outputIp = res.outputIp, outputCountry = res.outputCountry, realDelayMs = res.realDelayMs, packetLossPercent = res.packetLoss?.lossPercent, jitterMs = res.packetLoss?.jitterMs, avgPingMs = res.packetLoss?.avgLatencyMs))
+                    } else { errorText = "No healthy path found." }
                     isHealing = false
                 }
             },
             onDeep = {
-                showHealDialog = false
-                isHealing = true
-                healingProgressList = emptyList()
-                addProgress("شروع ترمیم (کامل)...")
+                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("Start (Deep)...")
                 scope.launch {
                     val res = diagnosisResult!!
                     val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.DEEP) { p -> addProgress(p) }
                     if (healedConfig != null) {
                         healedLink = ConfigParserFactory.buildLink(healedConfig)
-                        historyDao.insert(HistoryEntity(
-                            link = healedLink!!,
-                            timestamp = System.currentTimeMillis(),
-                            status = "HEALED",
-                            outputIp = res.outputIp,
-                            outputCountry = res.outputCountry,
-                            realDelayMs = res.realDelayMs,
-                            packetLossPercent = res.packetLoss?.lossPercent,
-                            jitterMs = res.packetLoss?.jitterMs,
-                            avgPingMs = res.packetLoss?.avgLatencyMs
-                        ))
-                    } else { errorText = "مسیر سالمی پیدا نشد." }
+                        historyDao.insert(HistoryEntity(link = healedLink!!, timestamp = System.currentTimeMillis(), status = "HEALED", outputIp = res.outputIp, outputCountry = res.outputCountry, realDelayMs = res.realDelayMs, packetLossPercent = res.packetLoss?.lossPercent, jitterMs = res.packetLoss?.jitterMs, avgPingMs = res.packetLoss?.avgLatencyMs))
+                    } else { errorText = "No healthy path found." }
                     isHealing = false
                 }
             }
@@ -384,12 +326,9 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
     }
 
     if (showQrScanner) {
-        QrScannerDialog(
-            onDismiss = { showQrScanner = false },
-            onResult = { scannedLink ->
-                link = scannedLink
-                Toast.makeText(context, "کانفیگ اسکن شد", Toast.LENGTH_SHORT).show()
-            }
-        )
+        QrScannerDialog(onDismiss = { showQrScanner = false }, onResult = { scannedLink ->
+            link = scannedLink
+            Toast.makeText(context, "Config scanned", Toast.LENGTH_SHORT).show()
+        })
     }
 }

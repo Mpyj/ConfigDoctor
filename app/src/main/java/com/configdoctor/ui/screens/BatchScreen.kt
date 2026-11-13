@@ -21,10 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.configdoctor.MainActivity
+import com.configdoctor.R
 import com.configdoctor.data.AppDatabase
 import com.configdoctor.data.HistoryEntity
 import com.configdoctor.diagnose.DiagnosisResult
@@ -41,10 +43,7 @@ enum class BatchFilter { ALL, HEALTHY, DEAD }
 enum class BatchSort { DEFAULT, DELAY, PACKET_LOSS }
 
 @Composable
-fun BatchTab(
-    activity: MainActivity,
-    isDarkTheme: Boolean
-) {
+fun BatchTab(activity: MainActivity, isDarkTheme: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val db = remember { AppDatabase.getDatabase(context) }
@@ -96,21 +95,15 @@ fun BatchTab(
     val fetchSubscription: () -> Unit = {
         isFetchingSub = true
         scope.launch {
-            val content = withContext(Dispatchers.IO) {
-                try { URL(subUrl).readText() } catch (e: Exception) { null }
-            }
+            val content = withContext(Dispatchers.IO) { try { URL(subUrl).readText() } catch (e: Exception) { null } }
             if (content != null) {
                 val decoded = try { String(Base64.decode(content, Base64.DEFAULT)) } catch (e: Exception) { content }
                 val configLines = decoded.lines().filter { it.startsWith("vless://") || it.startsWith("vmess://") || it.startsWith("trojan://") }
                 if (configLines.isNotEmpty()) {
                     linksText = configLines.joinToString("\n")
-                    Toast.makeText(context, "${configLines.size} کانفیگ دریافت شد", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "هیچ کانفیگی پیدا نشد", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                Toast.makeText(context, "خطا در دریافت ساب", Toast.LENGTH_SHORT).show()
-            }
+                    Toast.makeText(context, "${configLines.size} configs received", Toast.LENGTH_SHORT).show()
+                } else { Toast.makeText(context, "No configs found", Toast.LENGTH_SHORT).show() }
+            } else { Toast.makeText(context, "Sub fetch error", Toast.LENGTH_SHORT).show() }
             isFetchingSub = false
         }
     }
@@ -122,19 +115,19 @@ fun BatchTab(
         OutlinedTextField(
             value = subUrl,
             onValueChange = { subUrl = it },
-            label = { Text("لینک ساب (https://...)", color = subTextColor) },
+            label = { Text(stringResource(R.string.sub_link), color = subTextColor) },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Color(0xFF6C63FF), unfocusedBorderColor = subTextColor.copy(alpha = 0.3f), focusedTextColor = textColor, unfocusedTextColor = textColor),
             trailingIcon = {
                 IconButton(onClick = { if (subUrl.isNotBlank()) fetchSubscription() }) {
-                    Icon(Icons.Rounded.Download, contentDescription = "دریافت", tint = Color(0xFF6C63FF))
+                    Icon(Icons.Rounded.Download, contentDescription = "Get", tint = Color(0xFF6C63FF))
                 }
             }
         )
 
         Spacer(Modifier.height(12.dp))
-        Text("یا لینک‌ها را دستی وارد کنید:", fontSize = 12.sp, color = subTextColor)
+        Text(stringResource(R.string.or_manual), fontSize = 12.sp, color = subTextColor)
 
         OutlinedTextField(
             value = linksText,
@@ -156,16 +149,11 @@ fun BatchTab(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Autorenew, contentDescription = null, modifier = Modifier.size(20.dp).rotate(rotation), tint = Color(0xFF6C63FF))
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(text = if (isFetchingSub) "دریافت ساب..." else progressText, color = textColor, fontSize = 14.sp)
+                        Text(text = if (isFetchingSub) "Fetching..." else progressText, color = textColor, fontSize = 14.sp)
                     }
                     if (isTesting || isHealing) {
                         Spacer(Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = { progressPercentage },
-                            modifier = Modifier.fillMaxWidth().height(6.dp),
-                            color = if (isHealing) Color(0xFF4CAF50) else Color(0xFF6C63FF),
-                            trackColor = Color.Gray.copy(alpha = 0.3f)
-                        )
+                        LinearProgressIndicator(progress = { progressPercentage }, modifier = Modifier.fillMaxWidth().height(6.dp), color = if (isHealing) Color(0xFF4CAF50) else Color(0xFF6C63FF), trackColor = Color.Gray.copy(alpha = 0.3f))
                     }
                 }
             }
@@ -185,10 +173,7 @@ fun BatchTab(
                             if (configLines.isNotEmpty()) {
                                 linksText = configLines.joinToString("\n")
                                 isTesting = true
-                                results = Diagnostician.diagnoseBatch(activity, configLines) { p, percent ->
-                                    progressText = p
-                                    progressPercentage = percent
-                                }
+                                results = Diagnostician.diagnoseBatch(activity, configLines) { p, percent -> progressText = p; progressPercentage = percent }
                                 isTesting = false
                                 progressText = ""
                             }
@@ -199,10 +184,7 @@ fun BatchTab(
                     isTesting = true
                     val links = linksText.lines().filter { it.isNotBlank() }
                     scope.launch {
-                        results = Diagnostician.diagnoseBatch(activity, links) { p, percent ->
-                            progressText = p
-                            progressPercentage = percent
-                        }
+                        results = Diagnostician.diagnoseBatch(activity, links) { p, percent -> progressText = p; progressPercentage = percent }
                         isTesting = false
                         progressText = ""
                     }
@@ -212,7 +194,7 @@ fun BatchTab(
             enabled = !isTesting && !isHealing && !isFetchingSub && (linksText.isNotBlank() || subUrl.isNotBlank()),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF))
         ) {
-            Text("شروع تست گروهی", fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.start_batch), fontWeight = FontWeight.Bold)
         }
 
         Spacer(Modifier.height(16.dp))
@@ -222,31 +204,10 @@ fun BatchTab(
             val deadCount = results.count { it.second?.overallStatus == OverallStatus.IP_DEAD || it.second?.overallStatus == OverallStatus.UNKNOWN }
             val snifilteredCount = results.count { it.second?.overallStatus == OverallStatus.SNI_FILTERED }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SummaryChip(
-                    label = "✅ سالم",
-                    count = healthyCount,
-                    color = Color(0xFF4CAF50),
-                    bg = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White,
-                    modifier = Modifier.weight(1f)
-                )
-                SummaryChip(
-                    label = "❌ خراب",
-                    count = deadCount,
-                    color = Color(0xFFF44336),
-                    bg = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White,
-                    modifier = Modifier.weight(1f)
-                )
-                SummaryChip(
-                    label = "⚠️ SNI",
-                    count = snifilteredCount,
-                    color = Color(0xFFFFC107),
-                    bg = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White,
-                    modifier = Modifier.weight(1f)
-                )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SummaryChip(label = stringResource(R.string.healthy), count = healthyCount, color = Color(0xFF4CAF50), bg = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White, modifier = Modifier.weight(1f))
+                SummaryChip(label = stringResource(R.string.dead), count = deadCount, color = Color(0xFFF44336), bg = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White, modifier = Modifier.weight(1f))
+                SummaryChip(label = stringResource(R.string.sni), count = snifilteredCount, color = Color(0xFFFFC107), bg = if (isDarkTheme) Color.White.copy(alpha = 0.05f) else Color.White, modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.height(12.dp))
 
@@ -264,12 +225,11 @@ fun BatchTab(
                         text = {
                             Text(
                                 when (f) {
-                                    BatchFilter.ALL -> "همه (${results.size})"
-                                    BatchFilter.HEALTHY -> "سالم ($healthyCount)"
-                                    BatchFilter.DEAD -> "خراب (${deadCount + snifilteredCount})"
+                                    BatchFilter.ALL -> "${stringResource(R.string.all)} (${results.size})"
+                                    BatchFilter.HEALTHY -> "${stringResource(R.string.healthy)} ($healthyCount)"
+                                    BatchFilter.DEAD -> "${stringResource(R.string.dead)} (${deadCount + snifilteredCount})"
                                 },
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 12.sp, fontWeight = FontWeight.Bold
                             )
                         }
                     )
@@ -278,15 +238,11 @@ fun BatchTab(
 
             Spacer(Modifier.height(8.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("جستجو...", fontSize = 12.sp, color = subTextColor) },
+                    placeholder = { Text(stringResource(R.string.search), fontSize = 12.sp, color = subTextColor) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp),
@@ -306,7 +262,7 @@ fun BatchTab(
                             BatchSort.PACKET_LOSS -> Icons.Rounded.NetworkPing
                             else -> Icons.Rounded.Sort
                         },
-                        contentDescription = "مرتب‌سازی",
+                        contentDescription = "Sort",
                         tint = Color(0xFF6C63FF)
                     )
                 }
@@ -314,54 +270,40 @@ fun BatchTab(
 
             Text(
                 text = when (sort) {
-                    BatchSort.DELAY -> "مرتب‌سازی: کمترین تأخیر"
-                    BatchSort.PACKET_LOSS -> "مرتب‌سازی: کمترین پکت‌لاس"
-                    BatchSort.DEFAULT -> "مرتب‌سازی: ترتیب اصلی"
+                    BatchSort.DELAY -> stringResource(R.string.sort_delay)
+                    BatchSort.PACKET_LOSS -> stringResource(R.string.sort_packet_loss)
+                    BatchSort.DEFAULT -> stringResource(R.string.sort_default)
                 },
-                fontSize = 10.sp,
-                color = subTextColor,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                fontSize = 10.sp, color = subTextColor, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
             )
 
             Spacer(Modifier.height(8.dp))
 
             if (filteredResults.isEmpty()) {
-                Text("نتیجه‌ای برای این فیلتر پیدا نشد.", color = subTextColor, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
+                Text(stringResource(R.string.no_result), color = subTextColor, fontSize = 12.sp, modifier = Modifier.padding(16.dp))
             } else {
                 filteredResults.forEach { (link, result) ->
                     val statusText = healStatuses[link]
                     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                         if (result != null) {
-                            CompactResultCard(
-                                result = result,
-                                isDarkTheme = isDarkTheme,
-                                onCopy = {
-                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    clipboard.setPrimaryClip(ClipData.newPlainText("config_link", ConfigParserFactory.buildLink(result.config)))
-                                    Toast.makeText(context, "لینک کپی شد", Toast.LENGTH_SHORT).show()
-                                }
-                            )
+                            CompactResultCard(result = result, isDarkTheme = isDarkTheme, onCopy = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("config_link", ConfigParserFactory.buildLink(result.config)))
+                                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                            })
                         } else {
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F).copy(alpha = 0.1f)),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
+                            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFD32F2F).copy(alpha = 0.1f)), shape = RoundedCornerShape(12.dp)) {
                                 Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Rounded.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("خطا در پارس: ${link.take(30)}...", color = Color.Red, fontSize = 12.sp)
+                                    Text("Parse error: ${link.take(30)}...", color = Color.Red, fontSize = 12.sp)
                                 }
                             }
                         }
-
                         if (statusText != null) {
                             Text(
-                                text = statusText,
-                                fontSize = 11.sp,
-                                color = if (statusText.startsWith("✅")) Color(0xFF4CAF50)
-                                       else if (statusText.startsWith("❌")) Color(0xFFF44336)
-                                       else Color(0xFFFFC107),
+                                text = statusText, fontSize = 11.sp,
+                                color = if (statusText.startsWith("✅")) Color(0xFF4CAF50) else if (statusText.startsWith("❌")) Color(0xFFF44336) else Color(0xFFFFC107),
                                 modifier = Modifier.padding(start = 12.dp, top = 2.dp, bottom = 4.dp)
                             )
                         }
@@ -372,15 +314,12 @@ fun BatchTab(
             Spacer(Modifier.height(16.dp))
 
             Button(
-                onClick = {
-                    healStatuses = emptyMap()
-                    showHealModeDialog = true
-                },
+                onClick = { healStatuses = emptyMap(); showHealModeDialog = true },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
                 enabled = !isTesting && !isHealing
             ) {
-                Text("ترمیم گروهی کانفیگ‌های خراب", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.heal_batch), fontWeight = FontWeight.Bold)
             }
 
             Spacer(Modifier.height(8.dp))
@@ -390,14 +329,14 @@ fun BatchTab(
                     val allLinks = filteredResults.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("batch_links", allLinks))
-                    Toast.makeText(context, "${filteredResults.size} لینک کپی شدند", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "${filteredResults.size} links copied", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.fillMaxWidth(),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6C63FF))
             ) {
                 Icon(Icons.Rounded.ContentCopy, contentDescription = null, tint = Color(0xFF6C63FF))
                 Spacer(Modifier.width(8.dp))
-                Text("کپی نتایج فیلتر شده (${filteredResults.size})", color = Color(0xFF6C63FF))
+                Text(stringResource(R.string.copy_filtered, filteredResults.size), color = Color(0xFF6C63FF))
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -406,18 +345,15 @@ fun BatchTab(
                 onClick = {
                     val allLinks = filteredResults.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
                     val base64Sub = Base64.encodeToString(allLinks.toByteArray(), Base64.NO_WRAP)
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, base64Sub)
-                    }
-                    context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری ساب (Base64)"))
+                    val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, base64Sub) }
+                    context.startActivity(Intent.createChooser(intent, "Share Sub"))
                 },
                 modifier = Modifier.fillMaxWidth(),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6C63FF))
             ) {
                 Icon(Icons.Rounded.Share, contentDescription = null, tint = Color(0xFF6C63FF))
                 Spacer(Modifier.width(8.dp))
-                Text("اشتراک‌گذاری نتایج فیلتر شده (Base64)", color = Color(0xFF6C63FF))
+                Text(stringResource(R.string.share_filtered), color = Color(0xFF6C63FF))
             }
         }
     }
@@ -425,55 +361,38 @@ fun BatchTab(
     if (showHealModeDialog) {
         AlertDialog(
             onDismissRequest = { showHealModeDialog = false },
-            title = { Text("حالت ترمیم گروهی", color = textColor) },
-            text = { Text("حالت کامل دقیق‌تره ولی طولانی‌تره.", color = textColor) },
+            title = { Text("Heal Batch", color = textColor) },
+            text = { Text("Deep is more accurate but takes longer.", color = textColor) },
             confirmButton = {
                 TextButton(onClick = {
                     showHealModeDialog = false
-                    progressPercentage = 0f
-                    executeHealBatch(
-                        activity, results, Diagnostician.HealMode.DEEP, historyDao,
+                    executeHealBatch(activity, results, Diagnostician.HealMode.DEEP, historyDao,
                         onStart = { isHealing = true; progressPercentage = 0f },
                         onProgress = { p, percent -> progressText = p; progressPercentage = percent },
                         onStatusUpdate = { link, status -> healStatuses = healStatuses + (link to status) },
                         onComplete = { newResults -> results = newResults; isHealing = false; progressText = ""; progressPercentage = 0f }
                     )
-                }) { Text("کامل", color = Color(0xFF6C63FF)) }
+                }) { Text("Deep", color = Color(0xFF6C63FF)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showHealModeDialog = false
-                    progressPercentage = 0f
-                    executeHealBatch(
-                        activity, results, Diagnostician.HealMode.QUICK, historyDao,
+                    executeHealBatch(activity, results, Diagnostician.HealMode.QUICK, historyDao,
                         onStart = { isHealing = true; progressPercentage = 0f },
                         onProgress = { p, percent -> progressText = p; progressPercentage = percent },
                         onStatusUpdate = { link, status -> healStatuses = healStatuses + (link to status) },
                         onComplete = { newResults -> results = newResults; isHealing = false; progressText = ""; progressPercentage = 0f }
                     )
-                }) { Text("سریع", color = Color(0xFF6C63FF)) }
+                }) { Text("Quick", color = Color(0xFF6C63FF)) }
             }
         )
     }
 }
 
 @Composable
-private fun SummaryChip(
-    label: String,
-    count: Int,
-    color: Color,
-    bg: Color,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = bg),
-        shape = RoundedCornerShape(10.dp),
-        modifier = modifier
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+private fun SummaryChip(label: String, count: Int, color: Color, bg: Color, modifier: Modifier = Modifier) {
+    Card(colors = CardDefaults.cardColors(containerColor = bg), shape = RoundedCornerShape(10.dp), modifier = modifier) {
+        Column(modifier = Modifier.fillMaxWidth().padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text("$count", color = color, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text(label, color = color.copy(alpha = 0.8f), fontSize = 10.sp)
         }
@@ -481,14 +400,9 @@ private fun SummaryChip(
 }
 
 private fun executeHealBatch(
-    activity: MainActivity,
-    currentResults: List<Pair<String, DiagnosisResult?>>,
-    mode: Diagnostician.HealMode,
-    historyDao: com.configdoctor.data.HistoryDao,
-    onStart: () -> Unit,
-    onProgress: (String, Float) -> Unit,
-    onStatusUpdate: (String, String) -> Unit,
-    onComplete: (List<Pair<String, DiagnosisResult?>>) -> Unit
+    activity: MainActivity, currentResults: List<Pair<String, DiagnosisResult?>>, mode: Diagnostician.HealMode,
+    historyDao: com.configdoctor.data.HistoryDao, onStart: () -> Unit, onProgress: (String, Float) -> Unit,
+    onStatusUpdate: (String, String) -> Unit, onComplete: (List<Pair<String, DiagnosisResult?>>) -> Unit
 ) {
     onStart()
     val configsToHeal = currentResults.mapNotNull { it.second?.config }
@@ -497,44 +411,27 @@ private fun executeHealBatch(
 
     val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main)
     scope.launch {
-        val healedPairs = Diagnostician.healBatch(activity, configsToHeal, mode) { progress, percent ->
-            onProgress(progress, percent)
-        }
-
+        val healedPairs = Diagnostician.healBatch(activity, configsToHeal, mode) { progress, percent -> onProgress(progress, percent) }
         var configIndex = 0
         val newResults = currentResults.map { pair ->
             val originalLink = pair.first
             if (pair.second != null) {
                 current++
-                onStatusUpdate(originalLink, "⏳ در حال ترمیم...")
-
+                onStatusUpdate(originalLink, "⏳ Healing...")
                 val percent = current.toFloat() / total.toFloat()
-                onProgress("ترمیم ${current} از ${total}...", percent)
-
+                onProgress("Healing ${current} of ${total}...", percent)
                 val healed = healedPairs[configIndex].second
                 configIndex++
                 if (healed != null) {
                     val newDiag = Diagnostician.diagnose(activity, healed)
-                    historyDao.insert(HistoryEntity(
-                        link = ConfigParserFactory.buildLink(healed),
-                        timestamp = System.currentTimeMillis(),
-                        status = "HEALED",
-                        outputIp = newDiag.outputIp,
-                        outputCountry = newDiag.outputCountry,
-                        realDelayMs = newDiag.realDelayMs,
-                        packetLossPercent = newDiag.packetLoss?.lossPercent,
-                        jitterMs = newDiag.packetLoss?.jitterMs,
-                        avgPingMs = newDiag.packetLoss?.avgLatencyMs
-                    ))
-                    onStatusUpdate(originalLink, "✅ ترمیم شد (${newDiag.realDelayMs ?: "-"}ms)")
+                    historyDao.insert(HistoryEntity(link = ConfigParserFactory.buildLink(healed), timestamp = System.currentTimeMillis(), status = "HEALED", outputIp = newDiag.outputIp, outputCountry = newDiag.outputCountry, realDelayMs = newDiag.realDelayMs, packetLossPercent = newDiag.packetLoss?.lossPercent, jitterMs = newDiag.packetLoss?.jitterMs, avgPingMs = newDiag.packetLoss?.avgLatencyMs))
+                    onStatusUpdate(originalLink, "✅ Healed (${newDiag.realDelayMs ?: "-"}ms)")
                     originalLink to newDiag
                 } else {
-                    onStatusUpdate(originalLink, "❌ IP سالمی پیدا نشد")
+                    onStatusUpdate(originalLink, "❌ No healthy IP found")
                     pair
                 }
-            } else {
-                pair
-            }
+            } else { pair }
         }
         onComplete(newResults)
     }
