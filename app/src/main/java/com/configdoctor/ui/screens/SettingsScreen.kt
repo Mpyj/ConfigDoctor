@@ -95,7 +95,6 @@ fun SettingsScreen(onBack: () -> Unit) {
             HorizontalDivider()
             Spacer(Modifier.height(24.dp))
 
-            // ─── بخش آپدیت IPهای کلادفلر ───
             Text("IPهای کلادفلر", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Spacer(Modifier.height(4.dp))
             Text(
@@ -115,12 +114,13 @@ fun SettingsScreen(onBack: () -> Unit) {
                 onClick = {
                     isUpdatingIps = true
                     scope.launch {
-                        // منابع پیشنهادی
                         val sources = listOf(
                             "https://raw.githubusercontent.com/ircfspace/cf-ip-scanner/main/ip.txt",
+                            "https://raw.githubusercontent.com/vfarid/cf-clean-ips/main/list.txt",
                             "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Cloudflare.txt"
                         )
                         var success = false
+                        var lastError: String? = null
                         for (url in sources) {
                             val result = CloudflareCleanIps.fetchFromSource(url)
                             if (result.isSuccess) {
@@ -132,10 +132,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                                     Toast.makeText(context, "✅ ${ips.size} IP آپدیت شد", Toast.LENGTH_SHORT).show()
                                     break
                                 }
+                            } else {
+                                lastError = result.exceptionOrNull()?.message
                             }
                         }
                         if (!success) {
-                            Toast.makeText(context, "❌ آپدیت ناموفق. اتصال اینترنت را چک کن.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "❌ آپدیت ناموفق: ${lastError ?: "اتصال را چک کن"}", Toast.LENGTH_LONG).show()
                         }
                         isUpdatingIps = false
                     }
