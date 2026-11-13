@@ -39,7 +39,38 @@ fun DetailGrid(res: DiagnosisResult) {
             DetailItemCard("IP خروجی", res.outputIp ?: "-", Icons.Rounded.ExitToApp, Color(0xFF795548), Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            DetailItemCard("کشور خروجی", formatCountry(res.outputCountry), Icons.Rounded.Flag, Color(0xFF3F51B5), Modifier.fillMaxWidth())
+            DetailItemCard("کشور خروجی", formatCountry(res.outputCountry), Icons.Rounded.Flag, Color(0xFF3F51B5), Modifier.weight(1f))
+            // ─── کارت جدید: پکت‌لاس ───
+            val pl = res.packetLoss
+            val plText = if (pl != null) {
+                "${"%.0f".format(pl.lossPercent)}% (${pl.received}/${pl.sent})"
+            } else "-"
+            val plColor = when {
+                pl == null -> Color(0xFF9E9E9E)
+                pl.lossPercent <= 5f -> Color(0xFF4CAF50)
+                pl.lossPercent <= 20f -> Color(0xFFFFC107)
+                else -> Color(0xFFF44336)
+            }
+            DetailItemCard("پکت‌لاس", plText, Icons.Rounded.NetworkPing, plColor, Modifier.weight(1f))
+        }
+        // ─── ردیف جدید: Jitter + میانگین تأخیر پکت ───
+        if (res.packetLoss != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                DetailItemCard(
+                    "Jitter",
+                    "${res.packetLoss.jitterMs ?: "-"} ms",
+                    Icons.Rounded.Timeline,
+                    Color(0xFF673AB7),
+                    Modifier.weight(1f)
+                )
+                DetailItemCard(
+                    "میانگین پینگ",
+                    "${res.packetLoss.avgLatencyMs ?: "-"} ms",
+                    Icons.Rounded.Speed,
+                    Color(0xFF00BCD4),
+                    Modifier.weight(1f)
+                )
+            }
         }
     }
 }

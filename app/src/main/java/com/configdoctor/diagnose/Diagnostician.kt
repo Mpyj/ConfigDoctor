@@ -27,7 +27,8 @@ data class DiagnosisResult(
     val tlsOk: Boolean?,
     val tlsError: String?,
     val overallStatus: OverallStatus,
-    val summary: String
+    val summary: String,
+    val packetLoss: PacketLossResult? = null
 )
 
 private data class HealCandidate(
@@ -52,7 +53,8 @@ object Diagnostician {
                 tcpOk = false, tcpLatencyMs = null, realDelayMs = null, outputIp = null,
                 outputCountry = null, tlsOk = null, tlsError = null,
                 overallStatus = if (resolvedIp == null) OverallStatus.DNS_FAILED else OverallStatus.IP_DEAD,
-                summary = "❌ سرور پاسخ نمی‌دهد.\nآی‌پی سرور احتمالاً سوخته یا مسیر اینترنت شما مشکل دارد.\nخطا: ${tcp.error}"
+                summary = "❌ سرور پاسخ نمی‌دهد.\nآی‌پی سرور احتمالاً سوخته یا مسیر اینترنت شما مشکل دارد.\nخطا: ${tcp.error}",
+                packetLoss = null
             )
         }
 
@@ -68,6 +70,17 @@ object Diagnostician {
 
         val realDelay = XrayRealDelayTester.test(context, config)
 
+        // تست پکت‌لاس فقط برای کانفیگ‌های سالم (Real Delay موفق)
+        val packetLoss = if (realDelay.ok) {
+            PacketLossTester.test(
+                address = config.address,
+                port = config.port,
+                count = 5,
+                intervalMs = 150,
+                timeoutMs = 1500
+            )
+        } else null
+
         val status: OverallStatus
         val summary: String
 
@@ -80,6 +93,9 @@ object Diagnostician {
                     if (realDelay.delayMs != null) append("Real Delay: ${realDelay.delayMs}ms\n")
                     if (tcp.latencyMs != null) append("TCP RTT: ${tcp.latencyMs}ms\n")
                     if (tlsOk == true) append("TLS: موفق\n")
+                    if (packetLoss != null && packetLoss.ok) {
+                        append("پکت‌لاس: ${"%.0f".format(packetLoss.lossPercent)}% (${packetLoss.received}/${packetLoss.sent})\n")
+                    }
                     if (!realDelay.ip.isNullOrBlank()) append("IP خروجی: ${realDelay.ip}\n")
                     if (!realDelay.country.isNullOrBlank()) append("کشور خروجی: ${formatCountry(realDelay.country)}\n")
                 }
@@ -110,7 +126,8 @@ object Diagnostician {
             config = config, serverType = serverType, resolvedIp = resolvedIp,
             tcpOk = true, tcpLatencyMs = tcp.latencyMs, realDelayMs = realDelay.delayMs,
             outputIp = realDelay.ip, outputCountry = realDelay.country,
-            tlsOk = tlsOk, tlsError = tlsError, overallStatus = status, summary = summary
+            tlsOk = tlsOk, tlsError = tlsError, overallStatus = status, summary = summary,
+            packetLoss = packetLoss
         )
     }
 
@@ -199,8 +216,46 @@ object Diagnostician {
             onProgress("هیچ کاندیدای پایداری پیدا نشد. استفاده از بهترین گزینه‌ی قبلی...")
             return@withContext realDelayPassed.minByOrNull { it.realDelayMs }?.config
         }
-        
-        onProgress("بهترین کانفیگ پایدار انتخاب شد (میانگین ${bestAvgDelay}ms).")
+
+        // ─── مرحله ۴: تست پکت‌لاس روی کاندیدای برتر ───
+        onProgress("مرحله ۴: تست پکت‌لاس روی ${topCandidates.size} کاندیدای برتر...")
+
+        val packetLossPassed = mutableListOf<Pair<VlessConfig, PacketLossResult>>()
+
+        for ((index, candidate) in topCandidates.withIndex()) {
+            onProgress("مرحله ۴: پینگ ${index + 1} از ${topCandidates.size} (${candidate.config.address})")
+            val pl = PacketLossTester.test(
+                address = candidate.config.address,
+                port = candidate.config.port,
+                count = 10,
+                intervalMs = 150,
+                timeoutMs = 2000
+            )
+            onProgress(
+                "مرحله ۴: ${candidate.config.address} → پکت‌لاس ${"%.0f".format(pl.lossPercent)}% " +
+                        "(دریافت ${pl.received}/${pl.sent}" +
+                        (if (pl.avgLatencyMs != null) "، میانگین ${pl.avgLatencyMs}ms" else "") + ")"
+            )
+            packetLossPassed.add(candidate.config to pl)
+        }
+
+        val bestByPacketLoss = packetLossPassed
+            .filter { it.second.lossPercent <= 30f }
+            .minWithOrNull(
+                compareBy<Pair<VlessConfig, PacketLossResult>> { it.second.lossPercent }
+                    .thenBy { it.second.avgLatencyMs ?: Long.MAX_VALUE }
+            )
+
+        if (bestByPacketLoss != null) {
+            onProgress(
+                "بهترین کانفیگ نهایی: ${bestByPacketLoss.first.address} " +
+                        "(پکت‌لاس ${"%.0f".format(bestByPacketLoss.second.lossPercent)}%، " +
+                        "میانگین ${bestByPacketLoss.second.avgLatencyMs}ms)"
+            )
+            return@withContext bestByPacketLoss.first
+        }
+
+        onProgress("هیچ کاندیدایی پکت‌لاس قابل قبول نداشت. استفاده از بهترین پایدار قبلی (میانگین ${bestAvgDelay}ms)...")
         return@withContext bestStableConfig
     }
 
@@ -250,7 +305,6 @@ object Diagnostician {
             onProgress("در حال ترمیم کانفیگ ${index + 1} از $total (آی‌پی: ${config.address})", percent)
             
             val healedConfig = healConfig(context, config, mode) { progressMsg ->
-                // وضعیت داخلی رو با درصد کلی ترکیب می‌کنیم
                 onProgress("ترمیم ${index + 1} از $total: $progressMsg", percent)
             }
             healed.add(config to healedConfig)

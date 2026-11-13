@@ -13,13 +13,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.lifecycle.lifecycleScope
+import com.configdoctor.data.SettingsManager
 import com.configdoctor.ui.screens.MainScreen
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             var isDarkTheme by remember { mutableStateOf(true) }
+            var themeLoaded by remember { mutableStateOf(false) }
+
+            // خوندن تم از DataStore در اولین اجرا
+            LaunchedEffect(Unit) {
+                SettingsManager.getTheme(this@MainActivity).collect { saved ->
+                    if (!themeLoaded) {
+                        isDarkTheme = saved
+                        themeLoaded = true
+                    }
+                }
+            }
 
             val colorScheme = if (isDarkTheme) {
                 darkColorScheme(
@@ -43,7 +57,13 @@ class MainActivity : ComponentActivity() {
                         MainScreen(
                             activity = this@MainActivity,
                             isDarkTheme = isDarkTheme,
-                            onToggleTheme = { isDarkTheme = !isDarkTheme }
+                            onToggleTheme = {
+                                isDarkTheme = !isDarkTheme
+                                // ذخیره در DataStore
+                                lifecycleScope.launch {
+                                    SettingsManager.setTheme(this@MainActivity, isDarkTheme)
+                                }
+                            }
                         )
                     }
                 }

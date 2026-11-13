@@ -1,6 +1,5 @@
 package com.configdoctor.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,6 +33,15 @@ fun CompactResultCard(
     val textColor = if (isDarkTheme) Color.White else Color.Black
     val subTextColor = if (isDarkTheme) Color.White.copy(alpha = 0.6f) else Color.Gray
 
+    val pl = result.packetLoss
+    val plText = if (pl != null) "${"%.0f".format(pl.lossPercent)}%" else "-"
+    val plColor = when {
+        pl == null -> textColor
+        pl.lossPercent <= 5f -> Color(0xFF4CAF50)
+        pl.lossPercent <= 20f -> Color(0xFFFFC107)
+        else -> Color(0xFFF44336)
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
@@ -58,25 +66,27 @@ fun CompactResultCard(
 
             Spacer(Modifier.height(8.dp))
 
-            // ردیف دوم: اطلاعات کلیدی به صورت Grid کوچیک
+            // ردیف دوم: اطلاعات کلیدی (۴ ستون)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Real Delay
                 Column {
                     Text("Real Delay", fontSize = 10.sp, color = subTextColor)
                     Text("${result.realDelayMs ?: "-"} ms", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = textColor)
                 }
-                // IP خروجی
                 Column {
                     Text("IP خروجی", fontSize = 10.sp, color = subTextColor)
                     Text(result.outputIp ?: "-", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = textColor)
                 }
-                // کشور
                 Column {
                     Text("کشور", fontSize = 10.sp, color = subTextColor)
                     Text(formatCountry(result.outputCountry), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = textColor)
+                }
+                // ─── ستون جدید: پکت‌لاس ───
+                Column {
+                    Text("پکت‌لاس", fontSize = 10.sp, color = subTextColor)
+                    Text(plText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = plColor)
                 }
             }
         }
