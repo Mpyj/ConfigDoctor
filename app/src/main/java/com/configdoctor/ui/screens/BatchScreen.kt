@@ -81,9 +81,7 @@ fun BatchTab(activity: MainActivity, isDarkTheme: Boolean) {
             BatchFilter.DEAD -> list.filter { it.second != null && it.second?.overallStatus != OverallStatus.HEALTHY }
             BatchFilter.ALL -> list
         }
-        if (searchQuery.isNotBlank()) {
-            list = list.filter { (link, _) -> link.contains(searchQuery, ignoreCase = true) }
-        }
+        if (searchQuery.isNotBlank()) list = list.filter { (link, _) -> link.contains(searchQuery, ignoreCase = true) }
         list = when (sort) {
             BatchSort.DELAY -> list.sortedBy { it.second?.realDelayMs ?: Long.MAX_VALUE }
             BatchSort.PACKET_LOSS -> list.sortedBy { it.second?.packetLoss?.lossPercent ?: Float.MAX_VALUE }
@@ -101,9 +99,9 @@ fun BatchTab(activity: MainActivity, isDarkTheme: Boolean) {
                 val configLines = decoded.lines().filter { it.startsWith("vless://") || it.startsWith("vmess://") || it.startsWith("trojan://") }
                 if (configLines.isNotEmpty()) {
                     linksText = configLines.joinToString("\n")
-                    Toast.makeText(context, "${configLines.size} configs received", Toast.LENGTH_SHORT).show()
-                } else { Toast.makeText(context, "No configs found", Toast.LENGTH_SHORT).show() }
-            } else { Toast.makeText(context, "Sub fetch error", Toast.LENGTH_SHORT).show() }
+                    Toast.makeText(context, "${configLines.size} configs", Toast.LENGTH_SHORT).show()
+                } else Toast.makeText(context, "No configs", Toast.LENGTH_SHORT).show()
+            } else Toast.makeText(context, "Error", Toast.LENGTH_SHORT).show()
             isFetchingSub = false
         }
     }
@@ -149,7 +147,7 @@ fun BatchTab(activity: MainActivity, isDarkTheme: Boolean) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Autorenew, contentDescription = null, modifier = Modifier.size(20.dp).rotate(rotation), tint = Color(0xFF6C63FF))
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(text = if (isFetchingSub) "Fetching..." else progressText, color = textColor, fontSize = 14.sp)
+                        Text(text = if (isFetchingSub) "..." else progressText, color = textColor, fontSize = 14.sp)
                     }
                     if (isTesting || isHealing) {
                         Spacer(Modifier.height(8.dp))
@@ -296,7 +294,7 @@ fun BatchTab(activity: MainActivity, isDarkTheme: Boolean) {
                                 Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Rounded.Error, contentDescription = null, tint = Color.Red, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Parse error: ${link.take(30)}...", color = Color.Red, fontSize = 12.sp)
+                                    Text("Error: ${link.take(30)}...", color = Color.Red, fontSize = 12.sp)
                                 }
                             }
                         }
@@ -329,7 +327,7 @@ fun BatchTab(activity: MainActivity, isDarkTheme: Boolean) {
                     val allLinks = filteredResults.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("batch_links", allLinks))
-                    Toast.makeText(context, "${filteredResults.size} links copied", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "${filteredResults.size} links", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.fillMaxWidth(),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6C63FF))
@@ -346,7 +344,7 @@ fun BatchTab(activity: MainActivity, isDarkTheme: Boolean) {
                     val allLinks = filteredResults.mapNotNull { it.second?.config }.map { ConfigParserFactory.buildLink(it) }.joinToString("\n")
                     val base64Sub = Base64.encodeToString(allLinks.toByteArray(), Base64.NO_WRAP)
                     val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, base64Sub) }
-                    context.startActivity(Intent.createChooser(intent, "Share Sub"))
+                    context.startActivity(Intent.createChooser(intent, "Share"))
                 },
                 modifier = Modifier.fillMaxWidth(),
                 border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6C63FF))

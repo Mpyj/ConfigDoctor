@@ -25,33 +25,30 @@
     <string name="heal_mode_desc">• حالت سریع: فقط ۲-۳ ثانیه.\n• حالت کامل: دقیق‌ترین (تا ۳۰ ثانیه).</string>
     <string name="heal_quick">ترمیم سریع</string>
     <string name="heal_deep">ترمیم کامل</string>
-    <string name="heal_tutorial_title">ترمیم چطور کار می‌کند؟</string>
-    <string name="heal_tutorial_desc">۱. تولید IPهای جدید\n۲. تست TCP\n۳. تست Real Delay\n۴. تست پایداری\n۵. تست پکت‌لاس\nممکن است ۱۰-۳۰ ثانیه طول بکشد.</string>
-    <string name="got_it">متوجه شدم</string>
-
+    
     <!-- Settings -->
     <string name="settings">تنظیمات</string>
     <string name="default_heal_mode">حالت پیش‌فرض ترمیم</string>
     <string name="quick">سریع</string>
     <string name="deep_accurate">کامل (دقیق‌تر)</string>
     <string name="test_timeout">زمان انتظار تست (میلی‌ثانیه)</string>
-    <string name="theme_settings">تنظیمات ظاهری</string>
+    <string name="theme_settings">ظاهر برنامه</string>
     <string name="theme_dark">تاریک</string>
     <string name="theme_light">روشن</string>
-    <string name="theme_auto">خودکار (بر اساس سیستم)</string>
+    <string name="theme_auto">خودکار (بر اساس ساعت)</string>
     <string name="language_settings">زبان</string>
     <string name="language_fa">فارسی</string>
     <string name="language_en">English</string>
     <string name="cf_ips">IPهای کلادفلر</string>
-    <string name="cf_ips_desc">لیست IPهای تمیز برای ترمیم کانفیگ. هر چند هفته یک بار آپدیت کن.</string>
-    <string name="update_ips">آپدیت لیست IPها</string>
-    <string name="updating_ips">در حال آپدیت...</string>
-    <string name="reset_default_ips">بازگشت به لیست پیش‌فرض</string>
+    <string name="cf_ips_desc">IPهای تمیز را دستی وارد کنید (هر خط یک IP).</string>
+    <string name="save_ips">ذخیره لیست</string>
+    <string name="reset_default_ips">بازگشت به پیش‌فرض</string>
     <string name="last_update">آخرین آپدیت: %1$s</string>
-    <string name="social_media">شبکه‌های اجتماعی</string>
+    <string name="social_media">ارتباط با ما</string>
     <string name="about">درباره</string>
     <string name="version">نسخه %1$s</string>
     <string name="developer">توسعه‌دهنده</string>
+    <string name="loading">در حال بارگذاری...</string>
 
     <!-- Batch Tab -->
     <string name="sub_link">لینک ساب (https://...)</string>
@@ -64,8 +61,8 @@
     <string name="search">جستجو...</string>
     <string name="no_result">نتیجه‌ای برای این فیلتر پیدا نشد.</string>
     <string name="heal_batch">ترمیم گروهی کانفیگ‌های خراب</string>
-    <string name="copy_filtered">کپی نتایج فیلتر شده (%1$d)</string>
-    <string name="share_filtered">اشتراک‌گذاری نتایج فیلتر شده (Base64)</string>
+    <string name="copy_filtered">کپی نتایج (%1$d)</string>
+    <string name="share_filtered">اشتراک‌گذاری (Base64)</string>
     <string name="sort_default">مرتب‌سازی: ترتیب اصلی</string>
     <string name="sort_delay">مرتب‌سازی: کمترین تأخیر</string>
     <string name="sort_packet_loss">مرتب‌سازی: کمترین پکت‌لاس</string>

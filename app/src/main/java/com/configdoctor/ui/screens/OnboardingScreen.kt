@@ -1,6 +1,5 @@
 package com.configdoctor.ui.screens
 
-import android.content.res.Resources
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -23,29 +23,14 @@ import androidx.compose.ui.unit.sp
 import com.configdoctor.R
 
 @Composable
-fun OnboardingScreen(
-    resources: Resources,
-    onFinish: () -> Unit
-) {
+fun OnboardingScreen(onFinish: () -> Unit) {
     var page by remember { mutableIntStateOf(0) }
     val totalPages = 3
 
     val pages = listOf(
-        Triple(
-            Icons.Rounded.MedicalServices,
-            R.string.onboarding_title_1,
-            R.string.onboarding_desc_1
-        ),
-        Triple(
-            Icons.Rounded.Troubleshoot,
-            R.string.onboarding_title_2,
-            R.string.onboarding_desc_2
-        ),
-        Triple(
-            Icons.Rounded.Build,
-            R.string.onboarding_title_3,
-            R.string.onboarding_desc_3
-        )
+        Triple(Icons.Rounded.MedicalServices, R.string.onboarding_title_1, R.string.onboarding_desc_1),
+        Triple(Icons.Rounded.Troubleshoot, R.string.onboarding_title_2, R.string.onboarding_desc_2),
+        Triple(Icons.Rounded.Build, R.string.onboarding_title_3, R.string.onboarding_desc_3)
     )
 
     Column(
@@ -59,7 +44,7 @@ fun OnboardingScreen(
         // Skip button
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
             TextButton(onClick = onFinish) {
-                Text(resources.getString(R.string.onboarding_skip), color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                Text(stringResource(R.string.onboarding_skip), color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
             }
         }
 
@@ -80,16 +65,11 @@ fun OnboardingScreen(
                         .background(Color(0xFF6C63FF).copy(alpha = 0.15f), CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(80.dp),
-                        tint = Color(0xFF6C63FF)
-                    )
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(80.dp), tint = Color(0xFF6C63FF))
                 }
                 Spacer(Modifier.height(32.dp))
                 Text(
-                    resources.getString(titleRes),
+                    stringResource(titleRes),
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -97,7 +77,7 @@ fun OnboardingScreen(
                 )
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    resources.getString(descRes),
+                    stringResource(descRes),
                     fontSize = 15.sp,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
@@ -131,7 +111,7 @@ fun OnboardingScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF))
             ) {
                 Text(
-                    if (page < totalPages - 1) resources.getString(R.string.onboarding_next) else resources.getString(R.string.onboarding_start),
+                    if (page < totalPages - 1) stringResource(R.string.onboarding_next) else stringResource(R.string.onboarding_start),
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )

@@ -1,9 +1,9 @@
 package com.configdoctor
 
-import android.content.res.Configuration
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
@@ -11,38 +11,63 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.lifecycleScope
 import com.configdoctor.data.SettingsManager
+import com.configdoctor.ui.screens.LanguageSelectionScreen
 import com.configdoctor.ui.screens.MainScreen
 import com.configdoctor.ui.screens.OnboardingScreen
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.Locale
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         setContent {
-            val context = LocalContext.current
             var themeMode by remember { mutableStateOf("AUTO") }
-            var language by remember { mutableStateOf("FA") }
+            var language by remember { mutableStateOf<String?>(null) }
             var showOnboarding by remember { mutableStateOf<Boolean?>(null) }
 
+            // بارگذاری تنظیمات
             LaunchedEffect(Unit) {
                 SettingsManager.getThemeMode(this@MainActivity).collect { themeMode = it }
             }
             LaunchedEffect(Unit) {
-                SettingsManager.getLanguage(this@MainActivity).collect { language = it }
+                SettingsManager.getLanguage(this@MainActivity).collect { lang ->
+                    if (lang.isNotBlank()) {
+                        // اگه زبان تغییر کرد، AppCompatDelegate رو آپدیت کن
+                        val currentLocale = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+                        val targetLocale = if (lang == "FA") "fa" else "en"
+                        if (!currentLocale.startsWith(targetLocale)) {
+                            AppCompatDelegate.setApplicationLocales(
+                                LocaleListCompat.forLanguageTags(targetLocale)
+                            )
+                        }
+                        language = lang
+                    }
+                }
             }
             LaunchedEffect(Unit) {
                 SettingsManager.isOnboardingShown(this@MainActivity).collect { 
                     if (showOnboarding == null) showOnboarding = !it
                 }
+            }
+
+            // اگه زبان هنوز انتخاب نشده، صفحه انتخاب زبان
+            if (language == null) {
+                LanguageSelectionScreen(
+                    onSelect = { lang ->
+                        lifecycleScope.launch {
+                            SettingsManager.setLanguage(this@MainActivity, lang)
+                        }
+                    }
+                )
+                return@setContent
             }
 
             val isDarkTheme = when (themeMode) {
@@ -54,17 +79,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            val locale = if (language == "FA") Locale("fa", "IR") else Locale.ENGLISH
             val layoutDirection = if (language == "FA") LayoutDirection.Rtl else LayoutDirection.Ltr
 
-            val config = Configuration(context.resources.configuration)
-            config.setLocale(locale)
-            val localizedContext = context.createConfigurationContext(config)
-
             val colorScheme = if (isDarkTheme) {
-                darkColorScheme(primary = Color(0xFF6C63FF), secondary = Color(0xFF00BFA5), background = Color(0xFF1A1A2E), surface = Color(0xFF16213E))
+                darkColorScheme(
+                    primary = Color(0xFF6C63FF),
+                    secondary = Color(0xFF00BFA5),
+                    background = Color(0xFF1A1A2E),
+                    surface = Color(0xFF16213E)
+                )
             } else {
-                lightColorScheme(primary = Color(0xFF6C63FF), secondary = Color(0xFF00BFA5), background = Color(0xFFF8F9FA), surface = Color.White)
+                lightColorScheme(
+                    primary = Color(0xFF6C63FF),
+                    secondary = Color(0xFF00BFA5),
+                    background = Color(0xFFF8F9FA),
+                    surface = Color.White
+                )
             }
 
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
@@ -73,35 +103,37 @@ class MainActivity : ComponentActivity() {
                         when (showOnboarding) {
                             true -> {
                                 OnboardingScreen(
-                                    resources = localizedContext.resources,
                                     onFinish = {
                                         showOnboarding = false
-                                        lifecycleScope.launch { SettingsManager.setOnboardingShown(this@MainActivity) }
+                                        lifecycleScope.launch {
+                                            SettingsManager.setOnboardingShown(this@MainActivity)
+                                        }
                                     }
                                 )
                             }
                             false -> {
-                                // ست کردن لوکال برای stringResource
-                                val configuration = LocalConfiguration.current
-                                configuration.setLocale(locale)
-                                
                                 MainScreen(
                                     activity = this@MainActivity,
                                     isDarkTheme = isDarkTheme,
                                     themeMode = themeMode,
-                                    language = language,
+                                    language = language!!,
                                     onToggleTheme = { newMode ->
                                         themeMode = newMode
-                                        lifecycleScope.launch { SettingsManager.setThemeMode(this@MainActivity, newMode) }
+                                        lifecycleScope.launch {
+                                            SettingsManager.setThemeMode(this@MainActivity, newMode)
+                                        }
                                     },
                                     onLanguageChange = { newLang ->
-                                        language = newLang
-                                        lifecycleScope.launch { SettingsManager.setLanguage(this@MainActivity, newLang) }
+                                        lifecycleScope.launch {
+                                            SettingsManager.setLanguage(this@MainActivity, newLang)
+                                        }
                                     }
                                 )
                             }
                             null -> {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator()
+                                }
                             }
                         }
                     }

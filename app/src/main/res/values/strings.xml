@@ -25,33 +25,30 @@
     <string name="heal_mode_desc">• Quick: Only 2-3 seconds.\n• Deep: Most accurate (up to 30s).</string>
     <string name="heal_quick">Quick Heal</string>
     <string name="heal_deep">Deep Heal</string>
-    <string name="heal_tutorial_title">How Heal Works?</string>
-    <string name="heal_tutorial_desc">1. Generate new IPs\n2. Test TCP\n3. Test Real Delay\n4. Test Stability\n5. Test Packet Loss\nThis may take 10-30 seconds.</string>
-    <string name="got_it">Got it</string>
-
+    
     <!-- Settings -->
     <string name="settings">Settings</string>
     <string name="default_heal_mode">Default Heal Mode</string>
     <string name="quick">Quick</string>
     <string name="deep_accurate">Deep (More Accurate)</string>
     <string name="test_timeout">Test Timeout (ms)</string>
-    <string name="theme_settings">Theme Settings</string>
+    <string name="theme_settings">Theme</string>
     <string name="theme_dark">Dark</string>
     <string name="theme_light">Light</string>
-    <string name="theme_auto">Auto (By System)</string>
+    <string name="theme_auto">Auto (By Time)</string>
     <string name="language_settings">Language</string>
     <string name="language_fa">فارسی</string>
     <string name="language_en">English</string>
     <string name="cf_ips">Cloudflare IPs</string>
-    <string name="cf_ips_desc">Clean IP list for config healing. Update every few weeks.</string>
-    <string name="update_ips">Update IP List</string>
-    <string name="updating_ips">Updating...</string>
-    <string name="reset_default_ips">Reset to Default List</string>
+    <string name="cf_ips_desc">Enter clean IPs manually (one per line).</string>
+    <string name="save_ips">Save List</string>
+    <string name="reset_default_ips">Reset to Default</string>
     <string name="last_update">Last Update: %1$s</string>
-    <string name="social_media">Social Media</string>
+    <string name="social_media">Connect with Us</string>
     <string name="about">About</string>
     <string name="version">Version %1$s</string>
     <string name="developer">Developer</string>
+    <string name="loading">Loading...</string>
 
     <!-- Batch Tab -->
     <string name="sub_link">Sub Link (https://...)</string>
@@ -64,8 +61,8 @@
     <string name="search">Search...</string>
     <string name="no_result">No results for this filter.</string>
     <string name="heal_batch">Heal Dead Configs</string>
-    <string name="copy_filtered">Copy Filtered Results (%1$d)</string>
-    <string name="share_filtered">Share Filtered Results (Base64)</string>
+    <string name="copy_filtered">Copy Filtered (%1$d)</string>
+    <string name="share_filtered">Share Filtered (Base64)</string>
     <string name="sort_default">Sort: Default</string>
     <string name="sort_delay">Sort: Lowest Delay</string>
     <string name="sort_packet_loss">Sort: Lowest Packet Loss</string>

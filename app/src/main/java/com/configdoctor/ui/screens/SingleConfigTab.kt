@@ -49,7 +49,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
     var showHealDialog by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
     var showQrScanner by remember { mutableStateOf(false) }
-    var showHealTutorial by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val context = activity.applicationContext
@@ -81,7 +80,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
     ) {
         Spacer(Modifier.height(16.dp))
 
-        // ورودی
         ElevatedCard(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -115,11 +113,10 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // دکمه تشخیص
         Button(
             onClick = {
                 if (link.isBlank()) {
-                    errorText = "Link is empty"
+                    errorText = context.getString(R.string.ready_desc)
                     return@Button
                 }
                 isLoading = true
@@ -139,9 +136,9 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                                     outputIp = diag.outputIp, outputCountry = diag.outputCountry, realDelayMs = diag.realDelayMs,
                                     packetLossPercent = diag.packetLoss?.lossPercent, jitterMs = diag.packetLoss?.jitterMs, avgPingMs = diag.packetLoss?.avgLatencyMs
                                 ))
-                            } catch (e: Exception) { errorText = "Error: ${e.message}" }
+                            } catch (e: Exception) { errorText = e.message }
                         },
-                        onFailure = { errorText = "Parse error: ${it.message}" }
+                        onFailure = { errorText = it.message }
                     )
                     isLoading = false
                 }
@@ -158,7 +155,6 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             Text(if (isLoading) stringResource(R.string.diagnosing) else stringResource(R.string.start_diagnose), fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
 
-        // دکمه تاریخچه
         if (historyList.isNotEmpty()) {
             OutlinedButton(
                 onClick = { showHistory = !showHistory },
@@ -211,7 +207,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("result", res.summary))
-                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.copy), Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = RoundedCornerShape(12.dp),
@@ -282,7 +278,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("healed_link", healedLink))
-                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.copy), Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White)
@@ -299,7 +295,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         HealModeDialog(
             onDismiss = { showHealDialog = false },
             onQuick = {
-                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("Start (Quick)...")
+                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("Start...")
                 scope.launch {
                     val res = diagnosisResult!!
                     val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.QUICK) { p -> addProgress(p) }
@@ -311,7 +307,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                 }
             },
             onDeep = {
-                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("Start (Deep)...")
+                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("Start...")
                 scope.launch {
                     val res = diagnosisResult!!
                     val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.DEEP) { p -> addProgress(p) }
