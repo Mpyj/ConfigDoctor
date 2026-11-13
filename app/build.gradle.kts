@@ -18,13 +18,6 @@ android {
     }
 
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-
         create("release") {
             val keystorePath = System.getenv("KEYSTORE_PATH")
                 ?: file("${rootDir}/configdoctor-release.jks").absolutePath
@@ -37,7 +30,6 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             isShrinkResources = false
         }
