@@ -1,0 +1,97 @@
+Mpyj Attribution License v1.0
+
+Copyright (c) 2026 Mpyj
+
+Project: Config Doctor
+Repository: https://github.com/Mpyj/ConfigDoctor
+
+All rights reserved except as expressly granted below.
+
+1. GRANT OF PERMISSION
+
+Subject to the terms and conditions of this license, permission is hereby granted to any person obtaining a copy of this software and its associated documentation (the "Software") to:
+
+- Use the Software for personal or commercial purposes.
+- Study and inspect the source code.
+- Modify and adapt the source code.
+- Create derivative works based on the Software.
+- Distribute original or modified copies of the Software.
+- Include the Software in other projects, subject to this license.
+
+2. ATTRIBUTION REQUIREMENT
+
+Attribution to the original developer is mandatory.
+
+Any distribution, publication, modification, or derivative work based on the Software must:
+
+- Clearly acknowledge the original developer: Mpyj.
+- Clearly identify the original project: Config Doctor.
+- Include a link to the original repository:
+  https://github.com/Mpyj/ConfigDoctor
+- Preserve this license and all original copyright notices.
+- Clearly indicate when the Software has been modified.
+
+Attribution must be reasonably visible and accessible to users of the redistributed or derivative work.
+
+3. PROHIBITED ACTIVITIES
+
+The following activities are not permitted:
+
+- Removing, hiding, or altering the original copyright or attribution notices.
+- Redistributing the Software or derivative works while omitting the required attribution.
+- Claiming original authorship or ownership of the Config Doctor project.
+- Misrepresenting the origin of the Software.
+- Presenting the original Software as an independently created project without acknowledging Mpyj.
+
+4. REDISTRIBUTION
+
+Redistribution of original or modified versions is permitted, provided that:
+
+- All requirements of this license are followed.
+- A copy of this license accompanies the redistributed Software.
+- Required attribution and copyright notices remain intact.
+- Modifications are identified where reasonably applicable.
+
+Redistributors must ensure that recipients are provided with the same attribution requirements.
+
+5. THIRD-PARTY COMPONENTS
+
+This license applies only to the original components of Config Doctor created by Mpyj.
+
+Third-party libraries, frameworks, dependencies, and external components remain subject to their respective licenses and terms.
+
+Nothing in this license overrides the rights or obligations established by third-party licenses.
+
+6. TRADEMARKS
+
+This license does not grant permission to use the Mpyj name, logos, or other branding elements in a manner that suggests official endorsement, sponsorship, or affiliation without prior permission.
+
+7. DISCLAIMER OF WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+THE AUTHORS OR COPYRIGHT HOLDERS SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE, TO THE EXTENT PERMITTED BY APPLICABLE LAW.
+
+8. TERMINATION
+
+Any violation of the conditions of this license automatically terminates the permissions granted to the violating party.
+
+Permissions may be reinstated if the violation is appropriately corrected, subject to applicable law.
+
+9. GOVERNING LAW
+
+This license shall be interpreted in accordance with applicable copyright laws and other relevant laws.
+
+If any provision is found unenforceable, the remaining provisions shall remain in effect to the extent permitted by law.
+
+10. FINAL NOTICE
+
+By using, modifying, or distributing the Software, you acknowledge that you have read and agreed to the terms of this license.
+
+Original Developer: Mpyj
+
+Original Project: Config Doctor
+
+Repository: https://github.com/Mpyj/ConfigDoctor
+
+Made with care by Mpyj.
