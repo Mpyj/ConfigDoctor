@@ -6,7 +6,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,6 +34,10 @@ class MainActivity : AppCompatActivity() {
             var themeMode by remember { mutableStateOf("AUTO") }
             var language by remember { mutableStateOf<String?>(null) }
             var showOnboarding by remember { mutableStateOf<Boolean?>(null) }
+            
+            // این متغیر نشون میده که آیا تنظیمات اولیه لود شدن یا نه
+            var isSettingsLoaded by remember { mutableStateOf(false) }
+            // این متغیر نشون میده که آیا در حال تغییر زبان هستیم (برای جلوگیری از پرش)
             var isChangingLanguage by remember { mutableStateOf(false) }
 
             // بارگذاری تنظیمات
@@ -38,24 +46,24 @@ class MainActivity : AppCompatActivity() {
             }
             LaunchedEffect(Unit) {
                 SettingsManager.getLanguage(this@MainActivity).collect { lang ->
-                    // اگه زبان خالی بود، یعنی کاربر هنوز انتخاب نکرده
                     if (lang.isBlank()) {
                         language = null
                     } else {
-                        // فقط اگه زبان واقعاً عوض شده، AppCompatDelegate رو صدا بزن
                         val currentLocale = AppCompatDelegate.getApplicationLocales().toLanguageTags()
                         val targetLocale = if (lang == "FA") "fa" else "en"
+                        
+                        // اگه زبان فرق داشت، تغییرش بده و لودینگ رو روشن کن
                         if (!currentLocale.startsWith(targetLocale)) {
                             isChangingLanguage = true
                             AppCompatDelegate.setApplicationLocales(
                                 LocaleListCompat.forLanguageTags(targetLocale)
                             )
-                            // بعد از تغییر، Activity دوباره ساخته می‌شه، پس اینجا نیازی به آپدیت نیست
                         } else {
-                            // زبان همونه، فقط state رو آپدیت کن
                             language = lang
                         }
                     }
+                    // تنظیمات زبان که اومد، یعنی لودینگ اولیه تمومه
+                    isSettingsLoaded = true 
                 }
             }
             LaunchedEffect(Unit) {
@@ -64,19 +72,27 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // اگه در حال تغییر زبان هستیم، لودینگ نشون بده (جلوگیری از پرش)
-            if (isChangingLanguage) {
+            // ۱. اگه تنظیمات اولیه لود نشده، فقط لودینگ نشون بده (رفع پرش اولیه)
+            if (!isSettingsLoaded) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(color = Color(0xFF6C63FF))
                 }
                 return@setContent
             }
 
-            // اگه زبان هنوز انتخاب نشده، صفحه انتخاب زبان
+            // ۲. اگه در حال تغییر زبان هستیم، لودینگ نشون بده (رفع پرش تغییر زبان)
+            if (isChangingLanguage) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color(0xFF6C63FF))
+                }
+                return@setContent
+            }
+
+            // ۳. اگه زبان هنوز انتخاب نشده (بار اول)
             if (language == null) {
                 LanguageSelectionScreen(
                     onSelect = { lang ->
-                        isChangingLanguage = true
+                        isChangingLanguage = true // لودینگ روشن بشه تا اکتیویتی ری‌استارت بشه
                         lifecycleScope.launch {
                             SettingsManager.setLanguage(this@MainActivity, lang)
                         }
@@ -117,45 +133,37 @@ class MainActivity : AppCompatActivity() {
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                 MaterialTheme(colorScheme = colorScheme) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        when (showOnboarding) {
-                            true -> {
-                                OnboardingScreen(
-                                    onFinish = {
-                                        showOnboarding = false
-                                        lifecycleScope.launch {
-                                            SettingsManager.setOnboardingShown(this@MainActivity)
-                                        }
+                        // ۴. نمایش آنبوردینگ یا صفحه اصلی
+                        if (showOnboarding == true) {
+                            OnboardingScreen(
+                                onFinish = {
+                                    showOnboarding = false
+                                    lifecycleScope.launch {
+                                        SettingsManager.setOnboardingShown(this@MainActivity)
                                     }
-                                )
-                            }
-                            false -> {
-                                MainScreen(
-                                    activity = this@MainActivity,
-                                    isDarkTheme = isDarkTheme,
-                                    themeMode = themeMode,
-                                    language = currentLang,
-                                    onToggleTheme = { newMode ->
-                                        themeMode = newMode
-                                        lifecycleScope.launch {
-                                            SettingsManager.setThemeMode(this@MainActivity, newMode)
-                                        }
-                                    },
-                                    onLanguageChange = { newLang ->
-                                        // فقط اگه واقعاً عوض شده
-                                        if (newLang != currentLang) {
-                                            isChangingLanguage = true
-                                            lifecycleScope.launch {
-                                                SettingsManager.setLanguage(this@MainActivity, newLang)
-                                            }
-                                        }
-                                    }
-                                )
-                            }
-                            null -> {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator()
                                 }
-                            }
+                            )
+                        } else {
+                            MainScreen(
+                                activity = this@MainActivity,
+                                isDarkTheme = isDarkTheme,
+                                themeMode = themeMode,
+                                language = currentLang,
+                                onToggleTheme = { newMode ->
+                                    themeMode = newMode
+                                    lifecycleScope.launch {
+                                        SettingsManager.setThemeMode(this@MainActivity, newMode)
+                                    }
+                                },
+                                onLanguageChange = { newLang ->
+                                    if (newLang != currentLang) {
+                                        isChangingLanguage = true
+                                        lifecycleScope.launch {
+                                            SettingsManager.setLanguage(this@MainActivity, newLang)
+                                        }
+                                    }
+                                }
+                            )
                         }
                     }
                 }
