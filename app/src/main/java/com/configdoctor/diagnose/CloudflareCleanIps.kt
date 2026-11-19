@@ -2,7 +2,9 @@ package com.configdoctor.diagnose
 
 import android.content.Context
 import com.configdoctor.data.SettingsManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.random.Random
@@ -26,12 +28,28 @@ object CloudflareCleanIps {
 
     suspend fun generateRandomIpsFromStorage(context: Context, count: Int = 100): List<String> {
         val savedIps = SettingsManager.getCloudflareIps(context).first()
+        val cachedIps = SettingsManager.getCachedWorkingIps(context).first()
+        
         val baseList = if (!savedIps.isNullOrBlank()) {
             savedIps.lines().filter { it.isNotBlank() }
         } else {
             DEFAULT_IPV4 + DEFAULT_IPV6
         }
-        return generateFromBase(baseList, count)
+        
+        // IPهای کش شده رو جدا می‌کنیم که اول تست بشن
+        val cachedList = cachedIps?.lines()?.filter { it.isNotBlank() } ?: emptyList()
+        
+        // ترکیب IPهای کش شده با بقیه
+        val finalList = mutableListOf<String>()
+        finalList.addAll(cachedList) // اول کش
+        
+        // بقیه رو رندوم اضافه می‌کنیم تا سقف count پر بشه
+        val randomNeeded = count - cachedList.size
+        if (randomNeeded > 0) {
+            finalList.addAll(generateFromBase(baseList, randomNeeded))
+        }
+        
+        return finalList.distinct()
     }
 
     fun generateRandomIps(count: Int = 100): List<String> {
@@ -56,12 +74,11 @@ object CloudflareCleanIps {
         return result.toList()
     }
 
-    // ─── آپدیت لیست از منبع آنلاین با پشتیبانی از Redirect ───
-    suspend fun fetchFromSource(urlString: String): Result<List<String>> {
-        return try {
+    suspend fun fetchFromSource(urlString: String): Result<List<String>> = withContext(Dispatchers.IO) {
+        try {
             val url = URL(urlString)
             val connection = url.openConnection() as HttpURLConnection
-            connection.instanceFollowRedirects = true   // ← مهم: دنبال کردن redirect
+            connection.instanceFollowRedirects = true
             connection.connectTimeout = 15000
             connection.readTimeout = 15000
             connection.requestMethod = "GET"
@@ -69,7 +86,7 @@ object CloudflareCleanIps {
 
             val responseCode = connection.responseCode
             if (responseCode !in 200..299) {
-                return Result.failure(Exception("HTTP $responseCode"))
+                return@withContext Result.failure(Exception("HTTP $responseCode"))
             }
 
             val content = connection.inputStream.bufferedReader().use { it.readText() }
@@ -80,7 +97,7 @@ object CloudflareCleanIps {
                 .filter { it.isNotBlank() && !it.startsWith("#") && isValidIp(it) }
 
             if (ips.isEmpty()) {
-                Result.failure(Exception("لیست خالی بود یا فرمت معتبر نداشت"))
+                Result.failure(Exception("Empty list"))
             } else {
                 Result.success(ips)
             }
@@ -90,8 +107,7 @@ object CloudflareCleanIps {
     }
 
     private fun isValidIp(ip: String): Boolean {
-        // فقط IPv4 و IPv6 ساده رو قبول کن
-        if (ip.contains(":")) return true   // IPv6
+        if (ip.contains(":")) return true
         val parts = ip.split(".")
         if (parts.size != 4) return false
         return parts.all { it.toIntOrNull()?.let { n -> n in 0..255 } == true }
