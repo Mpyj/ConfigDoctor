@@ -200,7 +200,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         AnimatedVisibility(visible = diagnosisResult != null) {
             Column {
                 val res = diagnosisResult!!
-                StatusCard(status = res.overallStatus, summary = res.summary, isDarkTheme = isDarkTheme)
+                StatusCard(res = res, isDarkTheme = isDarkTheme)
                 Spacer(modifier = Modifier.height(16.dp))
                 DetailGrid(res, isDarkTheme)
                 Spacer(modifier = Modifier.height(16.dp))

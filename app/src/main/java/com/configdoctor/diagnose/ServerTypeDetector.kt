@@ -9,7 +9,7 @@ enum class ServerType {
 }
 
 object ServerTypeDetector {
-    // رنج‌های دقیق IPv4 کلادفلر (به صورت Prefix و Mask)
+    // رنج‌های دقیق IPv4 کلادفلر (به صورت Prefix)
     private val cloudflareIpv4Ranges = listOf(
         "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
         "104.16.0.0/13", "104.24.0.0/14", "108.162.192.0/18",
@@ -52,7 +52,6 @@ object ServerTypeDetector {
             val networkBytes = ipToBytes(parts[0]) ?: return@any false
             val prefixLength = parts[1].toInt()
             
-            // بررسی بیت‌های Prefix
             val fullBytes = prefixLength / 8
             val remainingBits = prefixLength % 8
             
@@ -62,7 +61,8 @@ object ServerTypeDetector {
             
             if (remainingBits > 0) {
                 val mask = (0xFF shl (8 - remainingBits)) and 0xFF
-                if ((ipBytes[fullBytes] and mask) != (networkBytes[fullBytes] and mask)) return@any false
+                // 🔴 این خط اصلاح شد (toInt اضافه شد)
+                if ((ipBytes[fullBytes].toInt() and mask) != (networkBytes[fullBytes].toInt() and mask)) return@any false
             }
             true
         }
