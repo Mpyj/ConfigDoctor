@@ -68,7 +68,7 @@ fun StatusCard(res: DiagnosisResult, isDarkTheme: Boolean) {
                     }
                 }
 
-                // ─── هشدار و تنظیمات Fragment ───
+                // ─── هشدار Fragment ───
                 if (res.needsFragment) {
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -81,16 +81,15 @@ fun StatusCard(res: DiagnosisResult, isDarkTheme: Boolean) {
                                 Spacer(Modifier.width(8.dp))
                                 Text("نیاز به Fragment", fontWeight = FontWeight.Bold, color = Color(0xFFFFC107), fontSize = 13.sp)
                             }
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 "احتمالاً DPI ترافیک را بلاک می‌کند. در تنظیمات کلاینت (v2rayNG) گزینه Fragment را فعال کنید.",
                                 fontSize = 11.sp,
                                 color = if (isDarkTheme) Color.White.copy(alpha = 0.8f) else Color.DarkGray
                             )
                             
-                            // نمایش تنظیمات پیشنهادی
                             res.fragmentRecommendation?.let { rec ->
-                                Spacer(Modifier.height(8.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Surface(
                                     color = Color.Black.copy(alpha = 0.2f),
                                     shape = RoundedCornerShape(8.dp),
@@ -107,8 +106,27 @@ fun StatusCard(res: DiagnosisResult, isDarkTheme: Boolean) {
                         }
                     }
                 }
+
+                // ─── SNI پیشنهادی ───
+                if (res.suggestedSni != null) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF2196F3).copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.Dns, contentDescription = null, tint = Color(0xFF2196F3))
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text("SNI پیشنهادی", fontWeight = FontWeight.Bold, color = Color(0xFF2196F3), fontSize = 13.sp)
+                                Text(res.suggestedSni, fontSize = 11.sp, color = if (isDarkTheme) Color.White.copy(alpha = 0.8f) else Color.DarkGray)
+                            }
+                        }
+                    }
+                }
             }
 
+            // خط رنگی پایین کارت
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)

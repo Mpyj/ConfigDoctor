@@ -10,7 +10,6 @@ import java.util.concurrent.atomic.AtomicInteger
 
 enum class OverallStatus { HEALTHY, IP_DEAD, SNI_FILTERED, TLS_ERROR, DNS_FAILED, UNKNOWN }
 
-// دیتا کلاس برای نگه‌داری تنظیمات پیشنهادی Fragment
 data class FragmentRecommendation(
     val length: String,
     val interval: String,
@@ -34,7 +33,8 @@ data class DiagnosisResult(
     val mtu: Int? = null,
     val bestDns: DnsResult? = null,
     val needsFragment: Boolean = false,
-    val fragmentRecommendation: FragmentRecommendation? = null // ← تنظیمات پیشنهادی
+    val fragmentRecommendation: FragmentRecommendation? = null,
+    val suggestedSni: String? = null
 )
 
 private data class HealCandidate(val config: VlessConfig, val realDelayMs: Long)
@@ -72,26 +72,19 @@ object Diagnostician {
             val packetLoss = if (realDelay.ok) PacketLossTester.test(config.address, config.port, count = 5, intervalMs = 150, timeoutMs = 1500) else null
             val mtu = MtuTester.test(config.address, config.port)
 
-            // ─── منطق تشخیص Fragment ───
             var needsFragment = false
             var fragmentRec: FragmentRecommendation? = null
 
-            if (tcp.ok && realDelay.ok.not()) {
-                needsFragment = true
+            // ─── تشخیص عمیق‌تر ───
+            if (tcp.ok && !realDelay.ok) {
+                // اگه TLS شکست خورده یا کانفیگ SNI_FILTERED هست
                 if (tlsOk == false) {
-                    // خطای TLS یعنی DPI داره روی SNI حساسه
-                    fragmentRec = FragmentRecommendation(
-                        length = "10-40",
-                        interval = "10-20",
-                        packets = "tlshello"
-                    )
+                    needsFragment = true
+                    fragmentRec = FragmentRecommendation("10-40", "10-20", "tlshello")
                 } else {
-                    // TCP وصل شده ولی Real Delay شکست خورده
-                    fragmentRec = FragmentRecommendation(
-                        length = "100-200",
-                        interval = "10-20",
-                        packets = "1-3"
-                    )
+                    // TCP و TLS اوکی هست ولی تونل کار نمی‌کنه (مشکل SNI یا DPI)
+                    needsFragment = true
+                    fragmentRec = FragmentRecommendation("100-200", "10-20", "1-3")
                 }
             }
 
@@ -129,7 +122,8 @@ object Diagnostician {
                 outputIp = realDelay.ip, outputCountry = realDelay.country,
                 tlsOk = tlsOk, tlsError = tlsError, overallStatus = status, summary = summary,
                 packetLoss = packetLoss, mtu = mtu, bestDns = dnsResults.firstOrNull(),
-                needsFragment = needsFragment, fragmentRecommendation = fragmentRec
+                needsFragment = needsFragment, fragmentRecommendation = fragmentRec,
+                suggestedSni = null
             )
         } catch (e: Exception) {
             return@withContext DiagnosisResult(
@@ -232,7 +226,17 @@ object Diagnostician {
                 }
             }
 
-            // ۳. MTU (برای هر دو)
+            // ۳. SNI Rotation (برای همه)
+            onProgress("تست SNIهای جایگزین...")
+            val bestSni = SniTester.findBestSni(context, currentConfig)
+            if (bestSni != null && bestSni.first != (currentConfig.sni ?: currentConfig.host)) {
+                onProgress("✅ SNI بهتر پیدا شد: ${bestSni.first} (تأخیر: ${bestSni.second}ms)")
+                currentConfig = currentConfig.copy(sni = bestSni.first)
+            } else {
+                onProgress("SNI فعلی بهترین گزینه است.")
+            }
+
+            // ۴. MTU (برای هر دو)
             onProgress("مرحله نهایی: تست MTU...")
             val mtu = MtuTester.test(currentConfig.address, currentConfig.port)
             if (mtu != null) onProgress("MTU بهینه: $mtu")
