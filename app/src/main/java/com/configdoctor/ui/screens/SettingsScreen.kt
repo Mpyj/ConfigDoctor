@@ -191,9 +191,19 @@ fun SettingsScreen(
                     Spacer(Modifier.width(12.dp))
                     Column {
                         Text("Config Doctor", fontWeight = FontWeight.Bold)
-                        Text("v0.1.0", fontSize = 12.sp, color = subTextColor)
+                        // 👇 نسخه اینجا آپدیت شد
+                        Text("v1.1.0", fontSize = 12.sp, color = subTextColor)
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (language == "FA") 
+                        "ابزار هوشمند تست، عیب‌یابی و ترمیم کانفیگ‌های VLESS، VMess و Trojan."
+                    else 
+                        "Smart tool to test, diagnose, and heal VLESS, VMess, and Trojan configs.",
+                    fontSize = 12.sp,
+                    color = subTextColor
+                )
             }
         }
     }
@@ -214,7 +224,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
 private fun SettingsItem(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = Color(0xFF6C63FF))
-        Spacer(Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Text(subtitle, fontSize = 12.sp, color = Color.Gray)
@@ -233,7 +243,7 @@ private fun SocialItem(icon: ImageVector, title: String, subtitle: String, url: 
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, contentDescription = null, tint = Color(0xFF6C63FF))
-        Spacer(Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Text(subtitle, fontSize = 12.sp, color = Color.Gray)

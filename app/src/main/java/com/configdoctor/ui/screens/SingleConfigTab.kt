@@ -6,8 +6,10 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -116,7 +118,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         Button(
             onClick = {
                 if (link.isBlank()) {
-                    errorText = context.getString(R.string.ready_desc)
+                    errorText = "Link is empty"
                     return@Button
                 }
                 isLoading = true
@@ -136,9 +138,9 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                                     outputIp = diag.outputIp, outputCountry = diag.outputCountry, realDelayMs = diag.realDelayMs,
                                     packetLossPercent = diag.packetLoss?.lossPercent, jitterMs = diag.packetLoss?.jitterMs, avgPingMs = diag.packetLoss?.avgLatencyMs
                                 ))
-                            } catch (e: Exception) { errorText = e.message }
+                            } catch (e: Exception) { errorText = "Error: ${e.message}" }
                         },
-                        onFailure = { errorText = it.message }
+                        onFailure = { errorText = "Parse error: ${it.message}" }
                     )
                     isLoading = false
                 }
@@ -207,7 +209,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("result", res.summary))
-                            Toast.makeText(context, context.getString(R.string.copy), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f).height(48.dp),
                         shape = RoundedCornerShape(12.dp),
@@ -237,20 +239,61 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     }
                 }
 
-                AnimatedVisibility(visible = isHealing && healingProgressList.isNotEmpty()) {
+                // ─── کارت ترمیم حرفه‌ای ───
+                AnimatedVisibility(visible = isHealing) {
                     Card(
-                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                         colors = CardDefaults.cardColors(containerColor = if (isDarkTheme) Color(0xFF16213E) else Color.White),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(modifier = Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color(0xFF6C63FF), strokeWidth = 2.dp)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(stringResource(R.string.healing), fontWeight = FontWeight.Bold, color = textColor)
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(Color(0xFF6C63FF).copy(alpha = 0.15f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Rounded.Build, contentDescription = null, tint = Color(0xFF6C63FF), modifier = Modifier.size(20.dp))
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text("ترمیم هوشمند در حال اجراست", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor)
+                                    Text("لطفاً صبر کنید...", fontSize = 12.sp, color = subTextColor)
+                                }
+                                Spacer(modifier = Modifier.weight(1f))
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color(0xFF6C63FF), strokeWidth = 2.dp)
                             }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            healingProgressList.forEach { p -> Text("• $p", fontSize = 11.sp, color = subTextColor, lineHeight = 16.sp) }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider(color = if (isDarkTheme) Color.White.copy(alpha = 0.1f) else Color.Gray.copy(alpha = 0.2f))
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            healingProgressList.takeLast(5).forEachIndexed { index, msg ->
+                                val isLast = index == healingProgressList.takeLast(5).lastIndex
+                                val icon = when {
+                                    msg.contains("پورت") -> Icons.Rounded.SettingsEthernet
+                                    msg.contains("IP") || msg.contains("کلودفلر") -> Icons.Rounded.Public
+                                    msg.contains("MTU") -> Icons.Rounded.NetworkCheck
+                                    msg.contains("پایداری") || msg.contains("Real Delay") -> Icons.Rounded.Speed
+                                    msg.contains("✅") || msg.contains("بهتر") -> Icons.Rounded.CheckCircle
+                                    else -> Icons.Rounded.ChevronLeft
+                                }
+                                val color = if (isLast) Color(0xFF6C63FF) else subTextColor
+
+                                Row(modifier = Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = msg,
+                                        fontSize = 12.sp,
+                                        color = if (isLast) textColor else subTextColor,
+                                        fontWeight = if (isLast) FontWeight.Bold else FontWeight.Normal,
+                                        lineHeight = 16.sp
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -278,7 +321,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                         onClick = {
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("healed_link", healedLink))
-                            Toast.makeText(context, context.getString(R.string.copy), Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White)
@@ -295,7 +338,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
         HealModeDialog(
             onDismiss = { showHealDialog = false },
             onQuick = {
-                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("Start...")
+                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("شروع ترمیم سریع...")
                 scope.launch {
                     val res = diagnosisResult!!
                     val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.QUICK) { p -> addProgress(p) }
@@ -307,7 +350,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                 }
             },
             onDeep = {
-                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("Start...")
+                showHealDialog = false; isHealing = true; healingProgressList = emptyList(); addProgress("شروع ترمیم کامل...")
                 scope.launch {
                     val res = diagnosisResult!!
                     val healedConfig = Diagnostician.healConfig(activity, res.config, Diagnostician.HealMode.DEEP) { p -> addProgress(p) }

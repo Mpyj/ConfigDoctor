@@ -92,16 +92,6 @@ fun DetailGrid(res: DiagnosisResult, isDarkTheme: Boolean) {
 
             if (res.bestDns != null) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.Dns, contentDescription = null, tint = Color(0xFF8BC34A), modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text("بهترین DNS", fontSize = 13.sp, color = subTextColor, modifier = Modifier.weight(1f))
-                    Text("${res.bestDns.name} (${res.bestDns.latencyMs}ms)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF8BC34A))
-                }
-            } else {
-                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { showDnsDialog = true }
@@ -110,8 +100,8 @@ fun DetailGrid(res: DiagnosisResult, isDarkTheme: Boolean) {
                 ) {
                     Icon(Icons.Rounded.Dns, contentDescription = null, tint = Color(0xFF8BC34A), modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(10.dp))
-                    Text("تنظیم DNS", fontSize = 13.sp, color = subTextColor, modifier = Modifier.weight(1f))
-                    Text("راهنما", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF8BC34A))
+                    Text("بهترین DNS", fontSize = 13.sp, color = subTextColor, modifier = Modifier.weight(1f))
+                    Text("${res.bestDns.name} (${res.bestDns.latencyMs}ms)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF8BC34A))
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(Icons.Rounded.Info, contentDescription = "راهنما", tint = Color(0xFF6C63FF), modifier = Modifier.size(16.dp))
                 }
@@ -126,6 +116,7 @@ fun DetailGrid(res: DiagnosisResult, isDarkTheme: Boolean) {
         }
     }
 
+    // دیالوگ MTU
     if (showMtuDialog && res.mtu != null) {
         AlertDialog(
             onDismissRequest = { showMtuDialog = false },
@@ -141,17 +132,35 @@ fun DetailGrid(res: DiagnosisResult, isDarkTheme: Boolean) {
         )
     }
 
-    if (showDnsDialog) {
+    // دیالوگ DNS
+    if (showDnsDialog && res.bestDns != null) {
         AlertDialog(
             onDismissRequest = { showDnsDialog = false },
             title = { Text("تنظیم DNS پیشنهادی") },
             text = { 
-                Text("برای بهبود سرعت و امنیت، پیشنهاد می‌شود از DNSهای معتبر و سریع مثل شکن (Shecan) یا رادار (Radar) استفاده کنید.\n\n" +
-                     "چطور تنظیم کنم؟\n" +
-                     "۱. در تنظیمات گوشی به بخش Network & Internet بروید.\n" +
-                     "۲. Private DNS را انتخاب کنید.\n" +
-                     "۳. آدرس DNS مدنظر را وارد کنید (مثلاً برای شکن: free.shecan.ir)\n\n" +
-                     "توجه: برای اعمال این تنظیم، نیازی به تغییر کانفیگ نیست و روی کل گوشی اعمال می‌شود.")
+                Column {
+                    Text("بهترین DNS برای اینترنت شما: ${res.bestDns.name} (${res.bestDns.latencyMs}ms)\n\n")
+                    Text("برای اعمال این تنظیم:\n")
+                    Text("۱. در تنظیمات گوشی به بخش Network & Internet بروید.\n")
+                    Text("۲. Private DNS را انتخاب کنید.\n")
+                    Text("۳. آدرس زیر را وارد کنید:\n")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        color = Color(0xFF8BC34A).copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = res.bestDns.addressToEnter,
+                            color = Color(0xFF8BC34A),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("توجه: برای اعمال این تنظیم، نیازی به تغییر کانفیگ نیست و روی کل گوشی اعمال می‌شود.", fontSize = 12.sp)
+                }
             },
             confirmButton = {
                 TextButton(onClick = { showDnsDialog = false }) { Text("متوجه شدم") }

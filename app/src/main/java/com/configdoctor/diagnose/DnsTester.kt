@@ -9,24 +9,26 @@ import java.net.InetAddress
 data class DnsResult(
     val name: String,
     val ip: String,
-    val latencyMs: Long
+    val latencyMs: Long,
+    val addressToEnter: String // ← جدید: آدرسی که کاربر باید تو Private DNS وارد کنه
 )
 
 object DnsTester {
     private val dnsServers = mapOf(
-        "Shecan" to "178.22.122.100",
-        "Radar" to "10.202.10.10",
-        "Cloudflare" to "1.1.1.1",
-        "Google" to "8.8.8.8",
-        "Quad9" to "9.9.9.9"
+        "Shecan" to Pair("178.22.122.100", "free.shecan.ir"),
+        "Radar" to Pair("10.202.10.10", "dns.radar.game"),
+        "Cloudflare" to Pair("1.1.1.1", "1dot1dot1dot1.cloudflare-dns.com"),
+        "Google" to Pair("8.8.8.8", "dns.google"),
+        "Quad9" to Pair("9.9.9.9", "dns.quad9.net")
     )
 
     suspend fun testAllDns(): List<DnsResult> = withContext(Dispatchers.IO) {
         val results = mutableListOf<DnsResult>()
-        for ((name, ip) in dnsServers) {
+        for ((name, pair) in dnsServers) {
+            val (ip, host) = pair
             val latency = pingDns(ip)
             if (latency > 0) {
-                results.add(DnsResult(name, ip, latency))
+                results.add(DnsResult(name, ip, latency, host))
             }
         }
         return@withContext results.sortedBy { it.latencyMs }

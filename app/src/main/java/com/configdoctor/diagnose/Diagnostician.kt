@@ -25,7 +25,7 @@ data class DiagnosisResult(
     val summary: String,
     val packetLoss: PacketLossResult? = null,
     val mtu: Int? = null,
-    val bestDns: DnsResult? = null // ← جدید
+    val bestDns: DnsResult? = null
 )
 
 private data class HealCandidate(val config: VlessConfig, val realDelayMs: Long)
@@ -37,7 +37,7 @@ object Diagnostician {
         try {
             val (serverType, resolvedIp) = ServerTypeDetector.detect(config.address)
             val tcp = TcpTester.test(config.address, config.port)
-            val dnsResults = DnsTester.testAllDns().take(1) // فقط بهترین رو می‌گیریم
+            val dnsResults = DnsTester.testAllDns().take(1)
 
             if (!tcp.ok) {
                 return@withContext DiagnosisResult(
@@ -117,19 +117,11 @@ object Diagnostician {
             onProgress("تشخیص نوع سرور...")
             val (serverType, _) = ServerTypeDetector.detect(currentConfig.address)
 
-            // ─── مرحله ۱: انتخاب بهترین پورت (برای همه) ───
-            onProgress("مرحله ۱: تست موازی پورت‌ها...")
-            val bestPort = PortScanner.findBestPort(currentConfig.address, currentConfig.port)
-            if (bestPort != currentConfig.port) {
-                onProgress("✅ پورت بهتر پیدا شد: $bestPort")
-                currentConfig = currentConfig.copy(port = bestPort)
-            } else {
-                onProgress("پورت فعلی بهترین است.")
-            }
-
-            // ─── مرحله ۲: ترمیم IP (فقط کلودفلر) ───
+            // ─────────────────────────────────────────
+            // ۱. اگر کلودفلر بود: اول IP رو عوض کن، بعد پورت
+            // ─────────────────────────────────────────
             if (serverType == ServerType.CLOUDFLARE) {
-                onProgress("کلودفلر تشخیص داده شد. مرحله ۲: تولید IP...")
+                onProgress("کلودفلر تشخیص داده شد. مرحله ۱: تولید IPهای جدید...")
                 val randomIps = CloudflareCleanIps.generateRandomIpsFromStorage(context, 100)
                 val allCandidates = randomIps.distinct()
 
@@ -139,7 +131,7 @@ object Diagnostician {
                     async(Dispatchers.IO) {
                         tcpSemaphore.withPermit {
                             val done = tcpCounter.incrementAndGet()
-                            if (done % 10 == 0) onProgress("مرحله ۲: تست $done از ${allCandidates.size}")
+                            if (done % 10 == 0) onProgress("مرحله ۱: تست $done از ${allCandidates.size}")
                             if (TcpTester.test(ip, currentConfig.port, timeoutMs = 1000).ok) ip else null
                         }
                     }
@@ -157,7 +149,7 @@ object Diagnostician {
                             async(Dispatchers.IO) {
                                 rdSemaphore.withPermit {
                                     val done = rdCounter.incrementAndGet()
-                                    onProgress("مرحله ۳: تست $done از ${toTestRealDelay.size} ($ip)")
+                                    onProgress("مرحله ۲: تست $done از ${toTestRealDelay.size} ($ip)")
                                     val newConfig = currentConfig.copy(address = ip)
                                     val result = withTimeoutOrNull(7000) { XrayRealDelayTester.test(context, newConfig, timeoutMs = 5000) }
                                     if (result != null && result.ok && result.delayMs != null) HealCandidate(newConfig, result.delayMs) else null
@@ -169,7 +161,7 @@ object Diagnostician {
                             val topCandidates = realDelayPassed.sortedBy { it.realDelayMs }.take(3)
                             val stabilityResults = topCandidates.mapIndexed { index, candidate ->
                                 async(Dispatchers.IO) {
-                                    onProgress("مرحله ۴: پایداری ${index + 1} از ${topCandidates.size}")
+                                    onProgress("مرحله ۳: تست پایداری ${index + 1} از ${topCandidates.size}")
                                     val delays = mutableListOf<Long>()
                                     var successCount = 0
                                     repeat(3) {
@@ -191,12 +183,34 @@ object Diagnostician {
                 } else {
                     onProgress("هیچ IP سالمی پیدا نشد. استفاده از IP فعلی...")
                 }
-            } else {
-                onProgress("سرور شخصی تشخیص داده شد. نیازی به تغییر IP نیست.")
+                
+                // بعد از اینکه IP خوب پیدا شد، پورت رو هم چک می‌کنیم
+                onProgress("مرحله ۴: تست پورت‌ها روی IP جدید...")
+                val bestPort = PortScanner.findBestPort(currentConfig.address, currentConfig.port)
+                if (bestPort != currentConfig.port) {
+                    onProgress("✅ پورت بهتر پیدا شد: $bestPort (قبلی: ${currentConfig.port})")
+                    currentConfig = currentConfig.copy(port = bestPort)
+                }
+                
+            } 
+            // ─────────────────────────────────────────
+            // ۲. اگر سرور شخصی بود: اول پورت رو عوض کن (IP ثابته)
+            // ─────────────────────────────────────────
+            else {
+                onProgress("سرور شخصی تشخیص داده شد. مرحله ۱: تست پورت‌های جایگزین...")
+                val bestPort = PortScanner.findBestPort(currentConfig.address, currentConfig.port)
+                if (bestPort != currentConfig.port) {
+                    onProgress("✅ پورت بهتر پیدا شد: $bestPort (قبلی: ${currentConfig.port})")
+                    currentConfig = currentConfig.copy(port = bestPort)
+                } else {
+                    onProgress("پورت فعلی بهترین گزینه است.")
+                }
             }
 
-            // ─── مرحله ۵: پیدا کردن MTU ───
-            onProgress("مرحله ۵: تست MTU...")
+            // ─────────────────────────────────────────
+            // ۳. MTU (برای هر دو)
+            // ─────────────────────────────────────────
+            onProgress("مرحله نهایی: تست MTU...")
             val mtu = MtuTester.test(currentConfig.address, currentConfig.port)
             if (mtu != null) onProgress("MTU بهینه: $mtu")
 
