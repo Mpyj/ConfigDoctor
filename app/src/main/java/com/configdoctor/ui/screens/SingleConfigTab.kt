@@ -51,6 +51,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
     var showHealDialog by remember { mutableStateOf(false) }
     var showHistory by remember { mutableStateOf(false) }
     var showQrScanner by remember { mutableStateOf(false) }
+    var showHealedQr by remember { mutableStateOf(false) } // ← جدید
 
     val scope = rememberCoroutineScope()
     val context = activity.applicationContext
@@ -300,6 +301,7 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             }
         }
 
+        // ─── لینک ترمیم شده (با دکمه QR) ───
         AnimatedVisibility(visible = healedLink != null) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
@@ -316,17 +318,34 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
                     Surface(color = Color.White.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                         SelectionContainer { Text(text = healedLink ?: "", fontSize = 12.sp, color = Color.White, modifier = Modifier.padding(8.dp)) }
                     }
+                    
                     Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("healed_link", healedLink))
-                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White)
-                    ) {
-                        Text(stringResource(R.string.copy_new_link), color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
+                    
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("healed_link", healedLink))
+                                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+                        ) {
+                            Icon(Icons.Rounded.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(stringResource(R.string.copy_new_link), color = Color(0xFF1B5E20), fontWeight = FontWeight.Bold)
+                        }
+                        
+                        // دکمه QR
+                        OutlinedButton(
+                            onClick = { showHealedQr = true },
+                            modifier = Modifier.weight(1f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White)
+                        ) {
+                            Icon(Icons.Rounded.QrCode, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("QR", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -369,5 +388,12 @@ fun SingleConfigTab(activity: MainActivity, isDarkTheme: Boolean) {
             link = scannedLink
             Toast.makeText(context, "Config scanned", Toast.LENGTH_SHORT).show()
         })
+    }
+
+    if (showHealedQr && healedLink != null) {
+        QrCodeGeneratorDialog(
+            link = healedLink!!,
+            onDismiss = { showHealedQr = false }
+        )
     }
 }

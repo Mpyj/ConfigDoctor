@@ -10,6 +10,13 @@ import java.util.concurrent.atomic.AtomicInteger
 
 enum class OverallStatus { HEALTHY, IP_DEAD, SNI_FILTERED, TLS_ERROR, DNS_FAILED, UNKNOWN }
 
+// دیتا کلاس برای نگه‌داری تنظیمات پیشنهادی Fragment
+data class FragmentRecommendation(
+    val length: String,
+    val interval: String,
+    val packets: String
+)
+
 data class DiagnosisResult(
     val config: VlessConfig,
     val serverType: ServerType,
@@ -25,7 +32,9 @@ data class DiagnosisResult(
     val summary: String,
     val packetLoss: PacketLossResult? = null,
     val mtu: Int? = null,
-    val bestDns: DnsResult? = null
+    val bestDns: DnsResult? = null,
+    val needsFragment: Boolean = false,
+    val fragmentRecommendation: FragmentRecommendation? = null // ← تنظیمات پیشنهادی
 )
 
 private data class HealCandidate(val config: VlessConfig, val realDelayMs: Long)
@@ -63,6 +72,29 @@ object Diagnostician {
             val packetLoss = if (realDelay.ok) PacketLossTester.test(config.address, config.port, count = 5, intervalMs = 150, timeoutMs = 1500) else null
             val mtu = MtuTester.test(config.address, config.port)
 
+            // ─── منطق تشخیص Fragment ───
+            var needsFragment = false
+            var fragmentRec: FragmentRecommendation? = null
+
+            if (tcp.ok && realDelay.ok.not()) {
+                needsFragment = true
+                if (tlsOk == false) {
+                    // خطای TLS یعنی DPI داره روی SNI حساسه
+                    fragmentRec = FragmentRecommendation(
+                        length = "10-40",
+                        interval = "10-20",
+                        packets = "tlshello"
+                    )
+                } else {
+                    // TCP وصل شده ولی Real Delay شکست خورده
+                    fragmentRec = FragmentRecommendation(
+                        length = "100-200",
+                        interval = "10-20",
+                        packets = "1-3"
+                    )
+                }
+            }
+
             val status: OverallStatus
             val summary: String
             when {
@@ -96,7 +128,8 @@ object Diagnostician {
                 tcpOk = true, tcpLatencyMs = tcp.latencyMs, realDelayMs = realDelay.delayMs,
                 outputIp = realDelay.ip, outputCountry = realDelay.country,
                 tlsOk = tlsOk, tlsError = tlsError, overallStatus = status, summary = summary,
-                packetLoss = packetLoss, mtu = mtu, bestDns = dnsResults.firstOrNull()
+                packetLoss = packetLoss, mtu = mtu, bestDns = dnsResults.firstOrNull(),
+                needsFragment = needsFragment, fragmentRecommendation = fragmentRec
             )
         } catch (e: Exception) {
             return@withContext DiagnosisResult(
@@ -117,9 +150,7 @@ object Diagnostician {
             onProgress("تشخیص نوع سرور...")
             val (serverType, _) = ServerTypeDetector.detect(currentConfig.address)
 
-            // ─────────────────────────────────────────
-            // ۱. اگر کلودفلر بود: اول IP رو عوض کن، بعد پورت
-            // ─────────────────────────────────────────
+            // ۱. کلودفلر: اول IP، بعد پورت
             if (serverType == ServerType.CLOUDFLARE) {
                 onProgress("کلودفلر تشخیص داده شد. مرحله ۱: تولید IPهای جدید...")
                 val randomIps = CloudflareCleanIps.generateRandomIpsFromStorage(context, 100)
@@ -180,22 +211,16 @@ object Diagnostician {
                             }
                         }
                     }
-                } else {
-                    onProgress("هیچ IP سالمی پیدا نشد. استفاده از IP فعلی...")
                 }
                 
-                // بعد از اینکه IP خوب پیدا شد، پورت رو هم چک می‌کنیم
                 onProgress("مرحله ۴: تست پورت‌ها روی IP جدید...")
                 val bestPort = PortScanner.findBestPort(currentConfig.address, currentConfig.port)
                 if (bestPort != currentConfig.port) {
                     onProgress("✅ پورت بهتر پیدا شد: $bestPort (قبلی: ${currentConfig.port})")
                     currentConfig = currentConfig.copy(port = bestPort)
                 }
-                
             } 
-            // ─────────────────────────────────────────
-            // ۲. اگر سرور شخصی بود: اول پورت رو عوض کن (IP ثابته)
-            // ─────────────────────────────────────────
+            // ۲. سرور شخصی: اول پورت
             else {
                 onProgress("سرور شخصی تشخیص داده شد. مرحله ۱: تست پورت‌های جایگزین...")
                 val bestPort = PortScanner.findBestPort(currentConfig.address, currentConfig.port)
@@ -207,9 +232,7 @@ object Diagnostician {
                 }
             }
 
-            // ─────────────────────────────────────────
             // ۳. MTU (برای هر دو)
-            // ─────────────────────────────────────────
             onProgress("مرحله نهایی: تست MTU...")
             val mtu = MtuTester.test(currentConfig.address, currentConfig.port)
             if (mtu != null) onProgress("MTU بهینه: $mtu")

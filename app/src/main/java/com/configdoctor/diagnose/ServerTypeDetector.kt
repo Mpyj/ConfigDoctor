@@ -9,22 +9,19 @@ enum class ServerType {
 }
 
 object ServerTypeDetector {
-    // رنج‌های IPv4 کلادفلر
+    // رنج‌های دقیق IPv4 کلادفلر (به صورت Prefix و Mask)
     private val cloudflareIpv4Ranges = listOf(
-        "103.21.244.0", "103.22.200.0", "103.31.4.0",
-        "104.16.0.0", "104.17.0.0", "104.18.0.0", "104.19.0.0",
-        "104.20.0.0", "104.21.0.0", "104.22.0.0", "104.23.0.0",
-        "104.24.0.0", "104.25.0.0", "104.26.0.0", "104.27.0.0",
-        "108.162.192.0", "131.0.72.0", "141.101.64.0",
-        "162.158.0.0", "172.64.0.0", "172.65.0.0", "172.66.0.0", "172.67.0.0",
-        "173.245.48.0", "188.114.96.0", "188.114.97.0", "188.114.98.0", "188.114.99.0",
-        "190.93.240.0", "197.234.240.0", "198.41.128.0"
+        "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+        "104.16.0.0/13", "104.24.0.0/14", "108.162.192.0/18",
+        "131.0.72.0/22", "141.101.64.0/18", "162.158.0.0/15",
+        "172.64.0.0/13", "173.245.48.0/20", "188.114.96.0/20",
+        "190.93.240.0/20", "197.234.240.0/22", "198.41.128.0/17"
     )
 
-    // رنج‌های IPv6 کلادفلر
+    // رنج‌های دقیق IPv6 کلادفلر
     private val cloudflareIpv6Ranges = listOf(
-        "2400:cb00", "2405:8100", "2405:b500",
-        "2606:4700", "2803:f800", "2a06:98c0", "2c0f:f248"
+        "2400:cb00::/32", "2405:8100::/32", "2405:b500::/32",
+        "2606:4700::/32", "2803:f800::/32", "2a06:98c0::/29", "2c0f:f248::/32"
     )
 
     suspend fun detect(address: String): Pair<ServerType, String?> = withContext(Dispatchers.IO) {
@@ -35,14 +32,7 @@ object ServerTypeDetector {
                 return@withContext Pair(ServerType.CLOUDFLARE, resolvedIp)
             }
             
-            // اگر IPv6 بود ولی کلادفلر نبود، به عنوان دیتاسنتر/مستقیم حساب می‌کنیم
-            val type = if (resolvedIp.contains(":")) {
-                ServerType.DATACENTER 
-            } else {
-                ServerType.DIRECT
-            }
-            
-            return@withContext Pair(type, resolvedIp)
+            return@withContext Pair(ServerType.DIRECT, resolvedIp)
         } catch (e: Exception) {
             return@withContext Pair(ServerType.UNKNOWN, null)
         }
@@ -50,21 +40,43 @@ object ServerTypeDetector {
 
     private fun isCloudflareIp(ip: String): Boolean {
         if (ip.contains(":")) {
-            // چک کردن IPv6 (بر اساس پیشوند)
-            return cloudflareIpv6Ranges.any { ip.startsWith(it) }
+            // چک کردن IPv6
+            return cloudflareIpv6Ranges.any { ip.startsWith(it.substringBefore("::")) }
         }
         
         // چک کردن IPv4
-        val parts = ip.split(".")
-        if (parts.size != 4) return false
+        val ipBytes = ipToBytes(ip) ?: return false
         
-        val ipNum = (parts[0].toLong() shl 24) + (parts[1].toLong() shl 16) + (parts[2].toLong() shl 8) + parts[3].toLong()
-        
-        return cloudflareIpv4Ranges.any { range ->
-            val rangeParts = range.split(".")
-            val rangeNum = (rangeParts[0].toLong() shl 24) + (rangeParts[1].toLong() shl 16) + (rangeParts[2].toLong() shl 8) + rangeParts[3].toLong()
-            // مقایسه ۲۴ بیت اول (کلاس C)
-            (ipNum shr 8) == (rangeNum shr 8)
+        return cloudflareIpv4Ranges.any { cidr ->
+            val parts = cidr.split("/")
+            val networkBytes = ipToBytes(parts[0]) ?: return@any false
+            val prefixLength = parts[1].toInt()
+            
+            // بررسی بیت‌های Prefix
+            val fullBytes = prefixLength / 8
+            val remainingBits = prefixLength % 8
+            
+            for (i in 0 until fullBytes) {
+                if (ipBytes[i] != networkBytes[i]) return@any false
+            }
+            
+            if (remainingBits > 0) {
+                val mask = (0xFF shl (8 - remainingBits)) and 0xFF
+                if ((ipBytes[fullBytes] and mask) != (networkBytes[fullBytes] and mask)) return@any false
+            }
+            true
         }
+    }
+
+    private fun ipToBytes(ip: String): ByteArray? {
+        val parts = ip.split(".")
+        if (parts.size != 4) return null
+        val bytes = ByteArray(4)
+        for (i in 0..3) {
+            val num = parts[i].toIntOrNull() ?: return null
+            if (num !in 0..255) return null
+            bytes[i] = num.toByte()
+        }
+        return bytes
     }
 }
