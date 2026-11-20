@@ -23,14 +23,12 @@ object DnsTester {
 
     suspend fun testAllDns(): List<DnsResult> = withContext(Dispatchers.IO) {
         val results = mutableListOf<DnsResult>()
-        
         for ((name, ip) in dnsServers) {
             val latency = pingDns(ip)
             if (latency > 0) {
                 results.add(DnsResult(name, ip, latency))
             }
         }
-        
         return@withContext results.sortedBy { it.latencyMs }
     }
 
@@ -40,15 +38,10 @@ object DnsTester {
             val socket = DatagramSocket()
             socket.soTimeout = 2000
             
-            // یک پکت ساده DNS برای کوئری google.com
             val query = byteArrayOf(
-                0x00, 0x00, // ID
-                0x01, 0x00, // Flags: RD
-                0x00, 0x01, // Questions: 1
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Answer, Authority, Additional
-                0x06, 0x67, 0x6F, 0x6F, 0x67, 0x6C, 0x65, 0x03, 0x63, 0x6F, 0x6D, 0x00, // google.com
-                0x00, 0x01, // Type: A
-                0x00, 0x01  // Class: IN
+                0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x06, 0x67, 0x6F, 0x6F, 0x67, 0x6C, 0x65, 0x03, 0x63, 0x6F, 0x6D, 0x00,
+                0x00, 0x01, 0x00, 0x01
             )
             
             val address = InetAddress.getByName(dnsIp)
@@ -63,7 +56,7 @@ object DnsTester {
             val end = System.currentTimeMillis()
             end - start
         } catch (e: Exception) {
-            0L // اگر جواب نداد
+            0L
         }
     }
 }

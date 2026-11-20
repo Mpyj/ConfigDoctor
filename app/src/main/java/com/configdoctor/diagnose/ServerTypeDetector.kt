@@ -5,15 +5,11 @@ import kotlinx.coroutines.withContext
 import java.net.InetAddress
 
 enum class ServerType {
-    CLOUDFLARE,
-    DATACENTER,
-    DIRECT,
-    UNKNOWN
+    CLOUDFLARE, DATACENTER, DIRECT, UNKNOWN
 }
 
 object ServerTypeDetector {
-
-    // لیست دقیق رنج‌های IPv4 کلادفلر (منبع: کلادفلر)
+    // رنج‌های IPv4 کلادفلر
     private val cloudflareIpv4Ranges = listOf(
         "103.21.244.0", "103.22.200.0", "103.31.4.0",
         "104.16.0.0", "104.17.0.0", "104.18.0.0", "104.19.0.0",
@@ -25,28 +21,27 @@ object ServerTypeDetector {
         "190.93.240.0", "197.234.240.0", "198.41.128.0"
     )
 
-    // لیست دقیق رنج‌های IPv6 کلادفلر
+    // رنج‌های IPv6 کلادفلر
     private val cloudflareIpv6Ranges = listOf(
-        "2400:cb00::", "2405:8100::", "2405:b500::",
-        "2606:4700::", "2803:f800::", "2a06:98c0::", "2c0f:f248::"
+        "2400:cb00", "2405:8100", "2405:b500",
+        "2606:4700", "2803:f800", "2a06:98c0", "2c0f:f248"
     )
 
     suspend fun detect(address: String): Pair<ServerType, String?> = withContext(Dispatchers.IO) {
         try {
             val resolvedIp = InetAddress.getByName(address).hostAddress ?: return@withContext Pair(ServerType.UNKNOWN, null)
-
-            // چک کردن اینکه آیا IP در رنج کلادفلر هست یا نه
+            
             if (isCloudflareIp(resolvedIp)) {
                 return@withContext Pair(ServerType.CLOUDFLARE, resolvedIp)
             }
-
-            // اگر نیست، احتمالاً دیتاسنتر یا مستقیمه
-            val type = if (resolvedIp.contains(":") || isDatacenterIp(resolvedIp)) {
-                ServerType.DATACENTER
+            
+            // اگر IPv6 بود ولی کلادفلر نبود، به عنوان دیتاسنتر/مستقیم حساب می‌کنیم
+            val type = if (resolvedIp.contains(":")) {
+                ServerType.DATACENTER 
             } else {
                 ServerType.DIRECT
             }
-
+            
             return@withContext Pair(type, resolvedIp)
         } catch (e: Exception) {
             return@withContext Pair(ServerType.UNKNOWN, null)
@@ -55,11 +50,11 @@ object ServerTypeDetector {
 
     private fun isCloudflareIp(ip: String): Boolean {
         if (ip.contains(":")) {
-            // IPv6 check (تقریبی)
-            return cloudflareIpv6Ranges.any { ip.startsWith(it.substringBeforeLast(":")) }
+            // چک کردن IPv6 (بر اساس پیشوند)
+            return cloudflareIpv6Ranges.any { ip.startsWith(it) }
         }
         
-        // IPv4 check
+        // چک کردن IPv4
         val parts = ip.split(".")
         if (parts.size != 4) return false
         
@@ -71,10 +66,5 @@ object ServerTypeDetector {
             // مقایسه ۲۴ بیت اول (کلاس C)
             (ipNum shr 8) == (rangeNum shr 8)
         }
-    }
-
-    private fun isDatacenterIp(ip: String): Boolean {
-        // تشخیص ساده دیتاسنتر بر اساس رنج‌های شناخته شده (اختیاری)
-        return false 
     }
 }

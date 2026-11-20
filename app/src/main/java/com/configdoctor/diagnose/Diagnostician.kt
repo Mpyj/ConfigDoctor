@@ -8,9 +8,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.atomic.AtomicInteger
 
-enum class OverallStatus {
-    HEALTHY, IP_DEAD, SNI_FILTERED, TLS_ERROR, DNS_FAILED, UNKNOWN
-}
+enum class OverallStatus { HEALTHY, IP_DEAD, SNI_FILTERED, TLS_ERROR, DNS_FAILED, UNKNOWN }
 
 data class DiagnosisResult(
     val config: VlessConfig,
@@ -26,22 +24,20 @@ data class DiagnosisResult(
     val overallStatus: OverallStatus,
     val summary: String,
     val packetLoss: PacketLossResult? = null,
-    val mtu: Int? = null
+    val mtu: Int? = null,
+    val bestDns: DnsResult? = null // ← جدید
 )
 
-private data class HealCandidate(
-    val config: VlessConfig,
-    val realDelayMs: Long
-)
+private data class HealCandidate(val config: VlessConfig, val realDelayMs: Long)
 
 object Diagnostician {
-
     enum class HealMode { QUICK, DEEP }
 
     suspend fun diagnose(context: Context, config: VlessConfig): DiagnosisResult = withContext(Dispatchers.IO) {
         try {
             val (serverType, resolvedIp) = ServerTypeDetector.detect(config.address)
             val tcp = TcpTester.test(config.address, config.port)
+            val dnsResults = DnsTester.testAllDns().take(1) // فقط بهترین رو می‌گیریم
 
             if (!tcp.ok) {
                 return@withContext DiagnosisResult(
@@ -50,13 +46,12 @@ object Diagnostician {
                     outputCountry = null, tlsOk = null, tlsError = null,
                     overallStatus = if (resolvedIp == null) OverallStatus.DNS_FAILED else OverallStatus.IP_DEAD,
                     summary = "❌ سرور پاسخ نمی‌دهد.\nخطا: ${tcp.error}",
-                    packetLoss = null, mtu = null
+                    packetLoss = null, mtu = null, bestDns = dnsResults.firstOrNull()
                 )
             }
 
             var tlsOk: Boolean? = null
             var tlsError: String? = null
-
             if (config.security.equals("tls", ignoreCase = true) || config.security.equals("reality", ignoreCase = true)) {
                 val sniForTest = config.sni ?: config.host
                 val tls = TlsTester.test(config.address, config.port, sniForTest)
@@ -65,16 +60,11 @@ object Diagnostician {
             }
 
             val realDelay = XrayRealDelayTester.test(context, config)
-
-            val packetLoss = if (realDelay.ok) {
-                PacketLossTester.test(config.address, config.port, count = 5, intervalMs = 150, timeoutMs = 1500)
-            } else null
-            
+            val packetLoss = if (realDelay.ok) PacketLossTester.test(config.address, config.port, count = 5, intervalMs = 150, timeoutMs = 1500) else null
             val mtu = MtuTester.test(config.address, config.port)
 
             val status: OverallStatus
             val summary: String
-
             when {
                 realDelay.ok -> {
                     status = OverallStatus.HEALTHY
@@ -84,10 +74,9 @@ object Diagnostician {
                         if (realDelay.delayMs != null) append("Real Delay: ${realDelay.delayMs}ms\n")
                         if (tcp.latencyMs != null) append("TCP RTT: ${tcp.latencyMs}ms\n")
                         if (tlsOk == true) append("TLS: موفق\n")
-                        if (packetLoss != null && packetLoss.ok) {
-                            append("پکت‌لاس: ${"%.0f".format(packetLoss.lossPercent)}%\n")
-                        }
+                        if (packetLoss != null && packetLoss.ok) append("پکت‌لاس: ${"%.0f".format(packetLoss.lossPercent)}%\n")
                         if (mtu != null) append("MTU بهینه: $mtu\n")
+                        if (dnsResults.isNotEmpty()) append("بهترین DNS: ${dnsResults.first().name} (${dnsResults.first().latencyMs}ms)\n")
                         if (!realDelay.ip.isNullOrBlank()) append("IP خروجی: ${realDelay.ip}\n")
                         if (!realDelay.country.isNullOrBlank()) append("کشور خروجی: ${formatCountry(realDelay.country)}\n")
                     }
@@ -107,7 +96,7 @@ object Diagnostician {
                 tcpOk = true, tcpLatencyMs = tcp.latencyMs, realDelayMs = realDelay.delayMs,
                 outputIp = realDelay.ip, outputCountry = realDelay.country,
                 tlsOk = tlsOk, tlsError = tlsError, overallStatus = status, summary = summary,
-                packetLoss = packetLoss, mtu = mtu
+                packetLoss = packetLoss, mtu = mtu, bestDns = dnsResults.firstOrNull()
             )
         } catch (e: Exception) {
             return@withContext DiagnosisResult(
@@ -116,44 +105,36 @@ object Diagnostician {
                 outputCountry = null, tlsOk = null, tlsError = null,
                 overallStatus = OverallStatus.UNKNOWN,
                 summary = "خطای سیستمی: ${e.message}",
-                packetLoss = null, mtu = null
+                packetLoss = null, mtu = null, bestDns = null
             )
         }
     }
 
-    suspend fun healConfig(
-        context: Context,
-        config: VlessConfig,
-        mode: HealMode = HealMode.DEEP,
-        onProgress: (String) -> Unit = {}
-    ): VlessConfig? = withContext(Dispatchers.IO) {
+    suspend fun healConfig(context: Context, config: VlessConfig, mode: HealMode = HealMode.DEEP, onProgress: (String) -> Unit = {}): VlessConfig? = withContext(Dispatchers.IO) {
         try {
             var currentConfig = if (config.port <= 0) config.copy(port = 443) else config
 
             onProgress("تشخیص نوع سرور...")
             val (serverType, _) = ServerTypeDetector.detect(currentConfig.address)
 
-            // ─── مرحله ۱: اسکن و انتخاب بهترین پورت (برای همه سرورها) ───
-            onProgress("مرحله ۱: تست موازی پورت‌های جایگزین...")
+            // ─── مرحله ۱: انتخاب بهترین پورت (برای همه) ───
+            onProgress("مرحله ۱: تست موازی پورت‌ها...")
             val bestPort = PortScanner.findBestPort(currentConfig.address, currentConfig.port)
-            
             if (bestPort != currentConfig.port) {
-                onProgress("✅ پورت بهتر پیدا شد: $bestPort (قبلی: ${currentConfig.port})")
+                onProgress("✅ پورت بهتر پیدا شد: $bestPort")
                 currentConfig = currentConfig.copy(port = bestPort)
             } else {
-                onProgress("پورت فعلی (${currentConfig.port}) بهترین گزینه است.")
+                onProgress("پورت فعلی بهترین است.")
             }
 
-            // ─── مرحله ۲: ترمیم IP (فقط برای کلودفلر) ───
+            // ─── مرحله ۲: ترمیم IP (فقط کلودفلر) ───
             if (serverType == ServerType.CLOUDFLARE) {
-                onProgress("کلودفلر تشخیص داده شد. مرحله ۲: تولید IPهای جدید...")
+                onProgress("کلودفلر تشخیص داده شد. مرحله ۲: تولید IP...")
                 val randomIps = CloudflareCleanIps.generateRandomIpsFromStorage(context, 100)
                 val allCandidates = randomIps.distinct()
 
-                onProgress("مرحله ۲: غربالگری ${allCandidates.size} IP (موازی)...")
                 val tcpCounter = AtomicInteger(0)
                 val tcpSemaphore = Semaphore(10)
-
                 val tcpPassed = allCandidates.map { ip ->
                     async(Dispatchers.IO) {
                         tcpSemaphore.withPermit {
@@ -172,7 +153,6 @@ object Diagnostician {
                         val toTestRealDelay = tcpPassed.take(20)
                         val rdSemaphore = Semaphore(5)
                         val rdCounter = AtomicInteger(0)
-
                         val realDelayPassed = toTestRealDelay.map { ip ->
                             async(Dispatchers.IO) {
                                 rdSemaphore.withPermit {
@@ -187,10 +167,9 @@ object Diagnostician {
 
                         if (realDelayPassed.isNotEmpty()) {
                             val topCandidates = realDelayPassed.sortedBy { it.realDelayMs }.take(3)
-                            
                             val stabilityResults = topCandidates.mapIndexed { index, candidate ->
                                 async(Dispatchers.IO) {
-                                    onProgress("مرحله ۴: تست پایداری ${index + 1} از ${topCandidates.size}")
+                                    onProgress("مرحله ۴: پایداری ${index + 1} از ${topCandidates.size}")
                                     val delays = mutableListOf<Long>()
                                     var successCount = 0
                                     repeat(3) {
@@ -216,7 +195,7 @@ object Diagnostician {
                 onProgress("سرور شخصی تشخیص داده شد. نیازی به تغییر IP نیست.")
             }
 
-            // ─── مرحله ۵: پیدا کردن MTU (برای همه) ───
+            // ─── مرحله ۵: پیدا کردن MTU ───
             onProgress("مرحله ۵: تست MTU...")
             val mtu = MtuTester.test(currentConfig.address, currentConfig.port)
             if (mtu != null) onProgress("MTU بهینه: $mtu")
@@ -228,11 +207,7 @@ object Diagnostician {
         }
     }
 
-    suspend fun diagnoseBatch(
-        context: Context,
-        links: List<String>,
-        onProgress: (String, Float) -> Unit = { _, _ -> }
-    ): List<Pair<String, DiagnosisResult?>> = withContext(Dispatchers.IO) {
+    suspend fun diagnoseBatch(context: Context, links: List<String>, onProgress: (String, Float) -> Unit = { _, _ -> }): List<Pair<String, DiagnosisResult?>> = withContext(Dispatchers.IO) {
         val total = links.size
         if (total == 0) return@withContext emptyList()
         val completed = AtomicInteger(0)
@@ -254,12 +229,7 @@ object Diagnostician {
         }.also { onProgress("تست کامل شد", 1f) }
     }
 
-    suspend fun healBatch(
-        context: Context,
-        configs: List<VlessConfig>,
-        mode: HealMode = HealMode.QUICK,
-        onProgress: (String, Float) -> Unit = { _, _ -> }
-    ): List<Pair<VlessConfig, VlessConfig?>> = withContext(Dispatchers.IO) {
+    suspend fun healBatch(context: Context, configs: List<VlessConfig>, mode: HealMode = HealMode.QUICK, onProgress: (String, Float) -> Unit = { _, _ -> }): List<Pair<VlessConfig, VlessConfig?>> = withContext(Dispatchers.IO) {
         val total = configs.size
         if (total == 0) return@withContext emptyList()
         val completed = AtomicInteger(0)
