@@ -70,10 +70,7 @@ object Diagnostician {
                 PacketLossTester.test(config.address, config.port, count = 5, intervalMs = 150, timeoutMs = 1500)
             } else null
             
-            // تست MTU فقط برای سرورهای شخصی (غیر کلودفلر)
-            val mtu = if (serverType != ServerType.CLOUDFLARE) {
-                MtuTester.test(config.address, config.port)
-            } else null
+            val mtu = MtuTester.test(config.address, config.port)
 
             val status: OverallStatus
             val summary: String
@@ -131,142 +128,104 @@ object Diagnostician {
         onProgress: (String) -> Unit = {}
     ): VlessConfig? = withContext(Dispatchers.IO) {
         try {
-            val baseConfig = if (config.port <= 0) config.copy(port = 443) else config
+            var currentConfig = if (config.port <= 0) config.copy(port = 443) else config
 
             onProgress("تشخیص نوع سرور...")
-            val (serverType, _) = ServerTypeDetector.detect(baseConfig.address)
+            val (serverType, _) = ServerTypeDetector.detect(currentConfig.address)
+
+            // ─── مرحله ۱: اسکن و انتخاب بهترین پورت (برای همه سرورها) ───
+            onProgress("مرحله ۱: تست موازی پورت‌های جایگزین...")
+            val bestPort = PortScanner.findBestPort(currentConfig.address, currentConfig.port)
             
-            if (serverType == ServerType.CLOUDFLARE) {
-                onProgress("کلودفلر تشخیص داده شد. شروع ترمیم با تغییر IP...")
-                return@withContext healCloudflare(context, baseConfig, mode, onProgress)
+            if (bestPort != currentConfig.port) {
+                onProgress("✅ پورت بهتر پیدا شد: $bestPort (قبلی: ${currentConfig.port})")
+                currentConfig = currentConfig.copy(port = bestPort)
             } else {
-                onProgress("سرور شخصی تشخیص داده شد. تغییر IP فایده‌ای ندارد.")
-                // ۱. پیدا کردن بهترین پورت
-                onProgress("اسکن پورت‌های جایگزین...")
-                val bestPort = PortScanner.findBestPort(baseConfig.address, baseConfig.port)
-                if (bestPort != baseConfig.port) {
-                    onProgress("پورت بهتر پیدا شد: $bestPort (قبلی: ${baseConfig.port})")
-                } else {
-                    onProgress("پورت فعلی بهترین گزینه است.")
-                }
-                
-                // ۲. پیدا کردن MTU
-                onProgress("تست MTU...")
-                val mtu = MtuTester.test(baseConfig.address, bestPort)
-                if (mtu != null) onProgress("MTU بهینه: $mtu")
-                
-                return@withContext baseConfig.copy(port = bestPort)
+                onProgress("پورت فعلی (${currentConfig.port}) بهترین گزینه است.")
             }
+
+            // ─── مرحله ۲: ترمیم IP (فقط برای کلودفلر) ───
+            if (serverType == ServerType.CLOUDFLARE) {
+                onProgress("کلودفلر تشخیص داده شد. مرحله ۲: تولید IPهای جدید...")
+                val randomIps = CloudflareCleanIps.generateRandomIpsFromStorage(context, 100)
+                val allCandidates = randomIps.distinct()
+
+                onProgress("مرحله ۲: غربالگری ${allCandidates.size} IP (موازی)...")
+                val tcpCounter = AtomicInteger(0)
+                val tcpSemaphore = Semaphore(10)
+
+                val tcpPassed = allCandidates.map { ip ->
+                    async(Dispatchers.IO) {
+                        tcpSemaphore.withPermit {
+                            val done = tcpCounter.incrementAndGet()
+                            if (done % 10 == 0) onProgress("مرحله ۲: تست $done از ${allCandidates.size}")
+                            if (TcpTester.test(ip, currentConfig.port, timeoutMs = 1000).ok) ip else null
+                        }
+                    }
+                }.awaitAll().filterNotNull()
+
+                if (tcpPassed.isNotEmpty()) {
+                    if (mode == HealMode.QUICK) {
+                        onProgress("حالت سریع: اولین IP سالم پیدا شد.")
+                        currentConfig = currentConfig.copy(address = tcpPassed.first())
+                    } else {
+                        val toTestRealDelay = tcpPassed.take(20)
+                        val rdSemaphore = Semaphore(5)
+                        val rdCounter = AtomicInteger(0)
+
+                        val realDelayPassed = toTestRealDelay.map { ip ->
+                            async(Dispatchers.IO) {
+                                rdSemaphore.withPermit {
+                                    val done = rdCounter.incrementAndGet()
+                                    onProgress("مرحله ۳: تست $done از ${toTestRealDelay.size} ($ip)")
+                                    val newConfig = currentConfig.copy(address = ip)
+                                    val result = withTimeoutOrNull(7000) { XrayRealDelayTester.test(context, newConfig, timeoutMs = 5000) }
+                                    if (result != null && result.ok && result.delayMs != null) HealCandidate(newConfig, result.delayMs) else null
+                                }
+                            }
+                        }.awaitAll().filterNotNull()
+
+                        if (realDelayPassed.isNotEmpty()) {
+                            val topCandidates = realDelayPassed.sortedBy { it.realDelayMs }.take(3)
+                            
+                            val stabilityResults = topCandidates.mapIndexed { index, candidate ->
+                                async(Dispatchers.IO) {
+                                    onProgress("مرحله ۴: تست پایداری ${index + 1} از ${topCandidates.size}")
+                                    val delays = mutableListOf<Long>()
+                                    var successCount = 0
+                                    repeat(3) {
+                                        val result = withTimeoutOrNull(7000) { XrayRealDelayTester.test(context, candidate.config, timeoutMs = 5000) }
+                                        if (result != null && result.ok && result.delayMs != null) { delays.add(result.delayMs); successCount++ }
+                                    }
+                                    if (successCount >= 2) candidate.config to delays.average().toLong() else candidate.config to null
+                                }
+                            }.awaitAll()
+
+                            val bestStable = stabilityResults.filter { it.second != null }.minByOrNull { it.second!! }
+                            if (bestStable != null) {
+                                currentConfig = bestStable.first
+                            } else {
+                                currentConfig = realDelayPassed.minByOrNull { it.realDelayMs }?.config ?: currentConfig
+                            }
+                        }
+                    }
+                } else {
+                    onProgress("هیچ IP سالمی پیدا نشد. استفاده از IP فعلی...")
+                }
+            } else {
+                onProgress("سرور شخصی تشخیص داده شد. نیازی به تغییر IP نیست.")
+            }
+
+            // ─── مرحله ۵: پیدا کردن MTU (برای همه) ───
+            onProgress("مرحله ۵: تست MTU...")
+            val mtu = MtuTester.test(currentConfig.address, currentConfig.port)
+            if (mtu != null) onProgress("MTU بهینه: $mtu")
+
+            return@withContext currentConfig
         } catch (e: Exception) {
             onProgress("خطا در حین ترمیم: ${e.message}")
             return@withContext null
         }
-    }
-
-    private suspend fun healCloudflare(
-        context: Context,
-        baseConfig: VlessConfig,
-        mode: HealMode,
-        onProgress: (String) -> Unit
-    ): VlessConfig? = coroutineScope {
-        onProgress("تولید IPهای جدید...")
-        val randomIps = CloudflareCleanIps.generateRandomIpsFromStorage(context, 100)
-        val allCandidates = randomIps.distinct()
-
-        onProgress("مرحله ۱: غربالگری ${allCandidates.size} IP (موازی)...")
-        val tcpCounter = AtomicInteger(0)
-        val tcpSemaphore = Semaphore(10)
-
-        val tcpPassed = allCandidates.map { ip ->
-            async(Dispatchers.IO) {
-                tcpSemaphore.withPermit {
-                    val done = tcpCounter.incrementAndGet()
-                    if (done % 10 == 0) onProgress("مرحله ۱: تست $done از ${allCandidates.size}")
-                    if (TcpTester.test(ip, baseConfig.port, timeoutMs = 1000).ok) ip else null
-                }
-            }
-        }.awaitAll().filterNotNull()
-
-        if (tcpPassed.isEmpty()) {
-            onProgress("هیچ IP سالمی پیدا نشد.")
-            return@coroutineScope null
-        }
-        if (mode == HealMode.QUICK) {
-            onProgress("حالت سریع: اولین IP سالم پیدا شد.")
-            return@coroutineScope baseConfig.copy(address = tcpPassed.first())
-        }
-
-        val toTestRealDelay = tcpPassed.take(20)
-        onProgress("مرحله ۲: تست Real Delay روی ${toTestRealDelay.size} IP...")
-        val rdCounter = AtomicInteger(0)
-        val rdSemaphore = Semaphore(5)
-
-        val realDelayPassed = toTestRealDelay.map { ip ->
-            async(Dispatchers.IO) {
-                rdSemaphore.withPermit {
-                    val done = rdCounter.incrementAndGet()
-                    onProgress("مرحله ۲: تست $done از ${toTestRealDelay.size} ($ip)")
-                    val newConfig = baseConfig.copy(address = ip)
-                    val result = withTimeoutOrNull(7000) { XrayRealDelayTester.test(context, newConfig, timeoutMs = 5000) }
-                    if (result != null && result.ok && result.delayMs != null) HealCandidate(newConfig, result.delayMs) else null
-                }
-            }
-        }.awaitAll().filterNotNull()
-
-        if (realDelayPassed.isEmpty()) {
-            onProgress("هیچ تونل سالمی پیدا نشد.")
-            return@coroutineScope null
-        }
-
-        val topCandidates = realDelayPassed.sortedBy { it.realDelayMs }.take(3)
-        onProgress("مرحله ۳: تست پایداری...")
-        
-        data class StabilityResult(val config: VlessConfig, val avgDelay: Long?)
-        val stabilityResults = topCandidates.mapIndexed { index, candidate ->
-            async(Dispatchers.IO) {
-                onProgress("مرحله ۳: پایداری ${index + 1} از ${topCandidates.size}")
-                val delays = mutableListOf<Long>()
-                var successCount = 0
-                repeat(3) {
-                    val result = withTimeoutOrNull(7000) { XrayRealDelayTester.test(context, candidate.config, timeoutMs = 5000) }
-                    if (result != null && result.ok && result.delayMs != null) { delays.add(result.delayMs); successCount++ }
-                }
-                if (successCount >= 2) StabilityResult(candidate.config, delays.average().toLong()) else StabilityResult(candidate.config, null)
-            }
-        }.awaitAll()
-
-        val stableCandidates = stabilityResults.filter { it.avgDelay != null }
-        if (stableCandidates.isEmpty()) {
-            onProgress("هیچ کاندیدای پایداری پیدا نشد.")
-            return@coroutineScope realDelayPassed.minByOrNull { it.realDelayMs }?.config
-        }
-
-        val bestStableConfig = stableCandidates.minByOrNull { it.avgDelay!! }?.config
-        val bestAvgDelay = stableCandidates.minByOrNull { it.avgDelay!! }?.avgDelay ?: Long.MAX_VALUE
-
-        onProgress("مرحله ۴: تست پکت‌لاس...")
-        val packetLossPassed = topCandidates.mapIndexed { index, candidate ->
-            async(Dispatchers.IO) {
-                val pl = PacketLossTester.test(candidate.config.address, candidate.config.port, count = 10, intervalMs = 150, timeoutMs = 2000)
-                onProgress("مرحله ۴: ${candidate.config.address} → ${"%.0f".format(pl.lossPercent)}%")
-                candidate.config to pl
-            }
-        }.awaitAll()
-
-        val bestByPacketLoss = packetLossPassed.filter { it.second.lossPercent <= 30f }
-            .minWithOrNull(compareBy<Pair<VlessConfig, PacketLossResult>> { it.second.lossPercent }.thenBy { it.second.avgLatencyMs ?: Long.MAX_VALUE })
-
-        val finalConfig = bestByPacketLoss?.first ?: bestStableConfig
-        
-        finalConfig?.let { SettingsManager.addCachedWorkingIp(context, it.address) }
-        
-        if (bestByPacketLoss != null) {
-            onProgress("بهترین کانفیگ: ${bestByPacketLoss.first.address} (پکت‌لاس ${"%.0f".format(bestByPacketLoss.second.lossPercent)}%)")
-        } else {
-            onProgress("استفاده از پایدارترین کانفیگ (میانگین ${bestAvgDelay}ms)")
-        }
-
-        return@coroutineScope finalConfig
     }
 
     suspend fun diagnoseBatch(

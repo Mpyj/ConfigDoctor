@@ -73,8 +73,8 @@ fun DetailGrid(res: DiagnosisResult, isDarkTheme: Boolean) {
             DetailRow("IP خروجی", res.outputIp ?: "-", Icons.Rounded.ExitToApp, Color(0xFF795548), textColor, subTextColor)
             DetailRow("کشور خروجی", formatCountry(res.outputCountry), Icons.Rounded.Flag, Color(0xFF3F51B5), textColor, subTextColor)
             
+            // MTU (برای همه سرورها)
             if (res.mtu != null) {
-                // ردیف MTU با قابلیت کلیک
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -91,22 +91,20 @@ fun DetailGrid(res: DiagnosisResult, isDarkTheme: Boolean) {
                 }
             }
 
-            // ─── ردیف DNS (فقط برای سرورهای شخصی) ───
-            if (res.serverType != ServerType.CLOUDFLARE) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showDnsDialog = true }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Rounded.Dns, contentDescription = null, tint = Color(0xFF8BC34A), modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text("تنظیم DNS", fontSize = 13.sp, color = subTextColor, modifier = Modifier.weight(1f))
-                    Text("پیشنهادی", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF8BC34A))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Rounded.Info, contentDescription = "راهنما", tint = Color(0xFF6C63FF), modifier = Modifier.size(16.dp))
-                }
+            // DNS (برای همه سرورها - چون به کانفیگ ربطی نداره)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showDnsDialog = true }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.Dns, contentDescription = null, tint = Color(0xFF8BC34A), modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("تنظیم DNS", fontSize = 13.sp, color = subTextColor, modifier = Modifier.weight(1f))
+                Text("پیشنهادی", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF8BC34A))
+                Spacer(modifier = Modifier.width(8.dp))
+                Icon(Icons.Rounded.Info, contentDescription = "راهنما", tint = Color(0xFF6C63FF), modifier = Modifier.size(16.dp))
             }
 
             if (pl != null) {
