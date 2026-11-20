@@ -116,18 +116,24 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.0-${{ github.run_number }}
-          name: Config Doctor v0.1.0-${{ github.run_number }}
+          tag_name: v1.1.0-${{ github.run_number }}
+          name: Config Doctor v1.1.0-${{ github.run_number }}
           body: |
-            🚀 نسخه جدید Config Doctor
+            🚀 **نسخه جدید Config Doctor (v1.1.0)**
 
-            **قابلیت‌ها:**
-            - تشخیص خودکار مشکلات کانفیگ (TCP, TLS, Real Delay)
-            - ترمیم خودکار IP سوخته (Auto-Heal) با ۴ مرحله (TCP، Real Delay، پایداری، پکت‌لاس)
+            **تغییرات کلیدی این نسخه:**
+            - 🧠 **ترمیم هوشمند (Smart Healing):** تشخیص خودکار کلودفلر یا سرور شخصی. (برای کلودفلر IP جدید تولید می‌شود، برای سرور شخصی نیازی به تغییر IP نیست).
+            - 📡 **اسکنر پورت (Port Scanner):** پیدا کردن پورت باز جایگزین برای سرورهای شخصی در صورت بسته بودن پورت اصلی.
+            - 📏 **تست MTU:** پیدا کردن بهترین MTU برای سرورهای شخصی و ارائه راهنمای اعمال آن.
+            - 🏎 **کش کردن IPهای موفق:** ذخیره‌ی IPهای سالم برای تست سریع‌تر در ترمیم‌های بعدی.
+            - 🛡 **پایداری بهتر:** مدیریت Timeout و خطاهای شبکه در حین تست‌های موازی.
+
+            **قابلیت‌های قبلی:**
+            - تشخیص خودکار مشکلات کانفیگ (TCP, TLS, Real Delay, Packet Loss)
+            - اسکنر QR Code
             - پشتیبانی از VLESS, VMess, Trojan
-            - نمایش IP و کشور خروجی
-            - نمایش پکت‌لاس، جیتر و میانگین پینگ
             - تاریخچه تست‌ها
+            - دو زبانه (فارسی/انگلیسی) + تم تاریک/روشن/خودکار
 
             **فایل‌های APK:**
             - `app-arm64-v8a-release.apk` (برای اکثر گوشی‌های مدرن)
